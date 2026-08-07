@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aetherops"
+version = "0.1.0"
+description = "AetherOps — autonomous incident remediation & change intelligence platform (design + reference implementation)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "AetherOps Platform Infrastructure" }]
+
+# The reference implementation is deliberately pure stdlib: it must run
+# anywhere with `python3`, no network, no keys. Production dependencies are
+# design decisions documented in docs/, surfaced here as optional extras.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.10"]
+llm = ["anthropic>=0.40"]          # production ModelGateway backend
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
