@@ -140,9 +140,13 @@ class DagExecutor:
         attempt = 0
         while True:
             attempt += 1
+            started = time.monotonic()
             try:
                 output = node.run(ctx) or {}
-                self._log("node.succeeded", node.name, {"attempt": attempt})
+                self._log("node.succeeded", node.name,
+                          {"attempt": attempt,
+                           "duration_ms": round((time.monotonic() - started)
+                                                * 1000, 1)})
                 return output
             except TransientError as exc:
                 if attempt >= node.retry.max_attempts:

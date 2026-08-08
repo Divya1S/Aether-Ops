@@ -2,13 +2,14 @@
 
 PY := PYTHONPATH=src python3
 
-.PHONY: demo demo-pause demo-deny demo-change test eval help
+.PHONY: demo demo-pause demo-deny demo-change demo-live test eval help
 
 help:
 	@echo "make demo         run the SEV2 vertical slice with auto-approval"
 	@echo "make demo-pause   run until the approval gate and pause"
 	@echo "make demo-deny    run, then deny at the approval gate"
 	@echo "make demo-change  run the change-intelligence demo (risky vs benign)"
+	@echo "make demo-live    run the SEV2 demo on a local Ollama model (free)"
 	@echo "make test         run the full unittest suite"
 	@echo "make eval         run the golden-scenario evaluation (release gate)"
 
@@ -23,6 +24,9 @@ demo-deny:
 
 demo-change:
 	$(PY) -m aetherops --change
+
+demo-live:
+	$(PY) -m aetherops --approve --live
 
 test:
 	$(PY) -m unittest discover -s tests -v

@@ -15,6 +15,7 @@ from aetherops.connectors.fakes import (FakeDatadog, FakeGitHub,
                                         FakeKubernetes, FakePagerDuty,
                                         FakeSlack, Snapshot)
 from aetherops.core.types import IncidentEvent, Severity, new_id
+from aetherops.gateway.backends import build_backend_chain
 from aetherops.gateway.model_gateway import ModelGateway
 from aetherops.memory.store import EpisodicMemory
 from aetherops.policy.engine import PolicyEngine
@@ -115,9 +116,14 @@ def all_scenarios() -> list[Scenario]:
     return [canonical(), uncorrelated_latency(), payments_regression()]
 
 
-def build_environment(scenario: Scenario, audit_path: str | None = None):
+def build_environment(scenario: Scenario, audit_path: str | None = None,
+                      backends_spec: str | None = None):
     """Build a fresh, isolated environment serving the scenario's snapshot —
-    one environment per replay, exactly like the production harness."""
+    one environment per replay, exactly like the production harness.
+
+    `backends_spec` selects the model-backend chain ("ollama,offline" for
+    live mode). The eval harness always passes "offline" explicitly —
+    golden-scenario replay must never depend on what's installed."""
     audit = AuditLog(path=audit_path)
     connectors = ConnectorRegistry()
     for connector_cls in (FakePagerDuty, FakeDatadog, FakeGitHub,
@@ -140,7 +146,8 @@ def build_environment(scenario: Scenario, audit_path: str | None = None):
 
     return incident, {
         "connectors": connectors,
-        "gateway": ModelGateway(audit=audit),
+        "gateway": ModelGateway(audit=audit,
+                                backends=build_backend_chain(backends_spec)),
         "audit": audit,
         "memory": memory,
         "policy": PolicyEngine(),

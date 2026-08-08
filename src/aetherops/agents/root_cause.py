@@ -23,8 +23,12 @@ class RootCauseAgent(Agent):
         digest = ctx.evidence_digest()
         prompt = (
             "[root_cause] Produce a causal hypothesis for this incident. "
-            "Cite evidence as [En] for every causal claim; if the evidence "
-            "does not support a causal chain, say 'Insufficient evidence'.\n"
+            "Cite evidence as [En] for every causal claim. The bundle below "
+            "is usually sufficient — prefer a cited hypothesis over refusal; "
+            "only if no change event correlates with the symptom, begin your "
+            "reply with exactly 'Insufficient evidence'. Otherwise end with "
+            "exactly one line 'Recommended class: <class>' where <class> is "
+            "one of: deploy-regression/memory, unclassified.\n"
             f"Incident: {ctx.incident.title}\nEvidence bundle:\n{digest}")
         response = ctx.gateway.complete(
             prompt, TaskProfile(task="root_cause", tier_hint=self.tier,
@@ -37,7 +41,13 @@ class RootCauseAgent(Agent):
                 f"hallucinated citation(s) E{invalid}: bundle has "
                 f"{len(ctx.evidence)} items")
 
-        if "insufficient evidence" in response.text.lower() or not cited_idx:
+        # Insufficient means the model *led* with the refusal marker or made
+        # no evidence references at all. A hedging caveat buried inside an
+        # otherwise cited diagnosis (common with small live models) is not a
+        # refusal.
+        leads_with_refusal = response.text.lower().lstrip().startswith(
+            "insufficient evidence")
+        if leads_with_refusal or not cited_idx:
             return AgentResult(
                 agent=self.name,
                 output={"status": "insufficient-evidence",
@@ -48,9 +58,7 @@ class RootCauseAgent(Agent):
 
         suspect = self._suspect_commit(ctx)
         grounded = suspect is not None and suspect in response.text
-        failure_class = ("deploy-regression/memory"
-                         if "deploy-regression/memory" in response.text
-                         else "unclassified")
+        failure_class = self._classify(ctx, response.text)
         coverage = len(cited_idx) / len(ctx.evidence)
         cited = [ctx.evidence[i - 1] for i in cited_idx]
 
@@ -64,6 +72,22 @@ class RootCauseAgent(Agent):
             confidence=score_confidence(0.9 if grounded else 0.6, coverage),
             citations=[e.citation for e in cited],
             model_id=response.model_id, tokens=response.tokens)
+
+    @staticmethod
+    def _classify(ctx, text: str) -> str:
+        """Failure class: taken from the model's text when it names a known
+        class; otherwise inferred deterministically from evidence markers —
+        deterministic validation wrapped around a probabilistic narrative,
+        the platform's standard pattern (docs/03 §2)."""
+        if "deploy-regression/memory" in text:
+            return "deploy-regression/memory"
+        has_oom = any("OOMKilled" in e.summary
+                      for e in ctx.evidence_of_kind("k8s-event"))
+        pool_commit = any("pool" in e.summary.lower()
+                          for e in ctx.evidence_of_kind("commit"))
+        if has_oom and pool_commit and ctx.evidence_of_kind("deploy"):
+            return "deploy-regression/memory"
+        return "unclassified"
 
     @staticmethod
     def _suspect_commit(ctx) -> str | None:

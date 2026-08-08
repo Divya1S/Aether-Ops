@@ -1,0 +1,106 @@
+"""Offline deterministic response templates, keyed by task and grounded in
+what the prompt's evidence digest actually contains — no evidence, no claim
+(the same grounding contract hosted models are held to). Used by the
+OfflineHeuristicBackend, which is the guaranteed last link of every backend
+chain and the sole backend for tests and eval replays.
+"""
+from __future__ import annotations
+
+import re
+
+_EVIDENCE_LINE = re.compile(r"\[E(\d+)\] \(([\w-]+)")
+_COMMIT_REF = re.compile(r"github://commit/([0-9a-f]{7,40})")
+_COMMIT_MENTION = re.compile(r"commit ([0-9a-f]{7,40})")
+
+
+def respond(prompt: str, task: str) -> str:
+    if task == "triage":
+        match = re.search(r"service=(\S+)", prompt)
+        service = match.group(1) if match else "the service"
+        return (f"Alert maps to service {service} in prod. Sustained, "
+                "customer-facing p99 latency breach.")
+
+    if task == "root_cause":
+        return _diagnose(prompt)
+
+    if task == "plan":
+        match = _COMMIT_MENTION.search(prompt)
+        sha = match.group(1) if match else "the suspect commit"
+        return (f"Remediation: (1) rollback_deployment to the previous "
+                "revision — reverses the causal trigger; "
+                f"(2) create_revert_pr for {sha} so the fix-forward path "
+                "is reviewed by the owning team. Both are catalog actions "
+                "with registered compensations.")
+
+    if task == "postmortem":
+        service = re.search(r"service=(\S+)", prompt)
+        cls = re.search(r"failure_class=(\S+)", prompt)
+        sha = re.search(r"suspect=([0-9a-f]{7,40})", prompt)
+        p99 = re.search(r"recovered_p99=(\d+)", prompt)
+        return (f"On {service.group(1) if service else 'the service'}, a "
+                f"deploy-introduced change "
+                f"({sha.group(1) if sha else 'unidentified'}) matching "
+                f"class {cls.group(1) if cls else 'unknown'} exhausted pod "
+                "memory and breached latency SLOs. The platform correlated "
+                "deploy, commit, and runtime evidence, executed a "
+                "policy-gated rollback with a fix-forward revert PR, and "
+                "verified recovery at p99 "
+                f"{p99.group(1) if p99 else '?'}ms.")
+
+    if task == "review":
+        checks = re.search(r"checks_passed=(\d+)/(\d+)", prompt)
+        done, total = (checks.group(1), checks.group(2)) if checks else ("?", "?")
+        return (f"Plan review: {done} of {total} independent safety checks "
+                "passed (catalog membership, grounded rollback target, "
+                "grounded revert SHA, service scope, failure-class fit).")
+
+    if task == "change_risk":
+        matched = re.search(r"matched=(\d+)", prompt)
+        blast = re.search(r"blast_radius=(\d+)", prompt)
+        band = re.search(r"band=(\w+)", prompt)
+        return (f"Change risk {band.group(1) if band else '?'}: matches "
+                f"{matched.group(1) if matched else '?'} prior incident "
+                f"episode(s) with the same failure signature; blast radius "
+                f"{blast.group(1) if blast else '?'} downstream services.")
+
+    if task == "verify":
+        p99 = re.search(r"p99=(\d+)", prompt)
+        oom = re.search(r"oomkilled_last_10m=(\d+)", prompt)
+        return (f"Post-remediation window shows p99 at "
+                f"{p99.group(1) if p99 else '?'}ms with "
+                f"{oom.group(1) if oom else '?'} OOMKilled events in the "
+                "last 10 minutes.")
+
+    return "Summary: " + prompt[:200]
+
+
+def _diagnose(prompt: str) -> str:
+    kinds: dict[str, int] = {}
+    for match in _EVIDENCE_LINE.finditer(prompt):
+        kinds.setdefault(match.group(2), int(match.group(1)))
+
+    sha_match = _COMMIT_REF.search(prompt)
+    has_oom = "OOMKilled" in prompt
+    has_pool_change = "pool" in prompt.lower()
+    required = {"metrics", "deploy", "commit", "k8s-event"}
+
+    if not (sha_match and has_oom and has_pool_change
+            and required <= kinds.keys()):
+        return ("Insufficient evidence: the bundle lacks a change event "
+                "correlated with the symptom onset. Escalate to a human "
+                "with the partial bundle.")
+
+    sha = sha_match.group(1)
+    episode_note = (
+        f" A prior episode with the same signature supports this class "
+        f"[E{kinds['episode']}]." if "episode" in kinds else "")
+    return (
+        f"Hypothesis (primary): the deploy [E{kinds['deploy']}] shipped "
+        f"commit {sha} raising the DB connection pool [E{kinds['commit']}]. "
+        f"Pod memory grew past its limit, causing OOMKilled and "
+        f"CrashLoopBackOff [E{kinds['k8s-event']}]; surviving pods "
+        f"absorbed the load, breaching p99 latency [E{kinds['metrics']}]. "
+        f"Causal chain: deploy [E{kinds['deploy']}] -> pool change "
+        f"[E{kinds['commit']}] -> memory exhaustion [E{kinds['k8s-event']}] "
+        f"-> latency breach [E{kinds['metrics']}].{episode_note} "
+        "Recommended class: deploy-regression/memory.")

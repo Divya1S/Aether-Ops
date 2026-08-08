@@ -32,12 +32,16 @@ def main() -> int:
                         help="run the change-intelligence demo instead")
     parser.add_argument("--postmortem", metavar="FILE",
                         help="write the generated postmortem to FILE")
+    parser.add_argument("--live", action="store_true",
+                        help="serve agents from a local Ollama model, "
+                             "falling back to offline if unavailable")
     args = parser.parse_args()
 
     if args.change:
         return change_demo()
 
-    incident, env = build_demo_environment()
+    backends_spec = "ollama,offline" if args.live else None
+    incident, env = build_demo_environment(backends_spec=backends_spec)
 
     _section(f"AetherOps — incident {incident.id}")
     print(f"{incident.severity.value}  {incident.title}  "
@@ -107,11 +111,40 @@ def main() -> int:
         _section(f"Workflow ended: {run.status.value}")
         print(f"  {run.error}")
 
+    _print_trace(env["audit"])
+
     _section("Governance")
     audit = env["audit"]
     print(f"  audit records: {len(audit)}  hash-chain verified: {audit.verify()}")
-    print(f"  model tokens metered: {env['gateway'].tokens_used}")
+    print(f"  model tokens metered: {env['gateway'].tokens_used}  "
+          f"est. production cost: ${env['gateway'].est_cost_usd:.4f}")
     return 0
+
+
+def _print_trace(audit) -> None:
+    """Per-workflow trace: model calls (backend, latency, cost) and node
+    durations — all reconstructed from the audit ledger, the same way the
+    postmortem timeline is."""
+    model_calls = [r.payload for r in audit.records if r.action == "model.call"]
+    fallbacks = [r.payload for r in audit.records
+                 if r.action == "backend.fallback"]
+    nodes = [r.payload for r in audit.records if r.action == "node.succeeded"]
+
+    _section("Trace (from the audit ledger)")
+    for call in model_calls:
+        print(f"  model  {call['task']:<12} {call['backend']:<8} "
+              f"{call['served_model']:<22} {call['latency_ms']:>8.1f} ms  "
+              f"{call['tokens_in']:>5}→{call['tokens_out']:<5} tok  "
+              f"${call['est_cost_usd']:.5f}")
+    for fb in fallbacks:
+        print(f"  FALLBACK: {fb['failed_backend']} → {fb['next_backend']} "
+              f"({fb['error'][:60]})")
+    slowest = sorted(nodes, key=lambda n: -n.get("duration_ms", 0))[:5]
+    for node in slowest:
+        print(f"  node   {node['node']:<16} {node.get('duration_ms', 0):>8.1f} ms")
+    total_latency = sum(c["latency_ms"] for c in model_calls)
+    print(f"  totals: {len(model_calls)} model calls, "
+          f"{total_latency:.1f} ms model latency")
 
 
 def change_demo() -> int:

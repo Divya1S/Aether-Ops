@@ -18,7 +18,9 @@ RCA_PRECISION_GATE = 0.60
 
 
 def run_scenario(scenario: Scenario) -> dict:
-    incident, env = build_environment(scenario)
+    # Always offline: golden-scenario replay is deterministic by contract
+    # (docs/10) and must not vary with what's installed on the machine.
+    incident, env = build_environment(scenario, backends_spec="offline")
     run, ctx = run_incident_remediation(incident, **env)
     if run.status == WorkflowStatus.PAUSED:
         run, ctx = run_incident_remediation(
@@ -79,6 +81,11 @@ def run_scenario(scenario: Scenario) -> dict:
         "tool_calls": sum(1 for record in env["audit"].records
                           if record.action == "tool.call"),
         "tokens": env["gateway"].tokens_used,
+        "model_latency_ms": round(sum(
+            record.payload.get("latency_ms", 0.0)
+            for record in env["audit"].records
+            if record.action == "model.call"), 1),
+        "est_cost_usd": env["gateway"].est_cost_usd,
         "audit_verified": env["audit"].verify(),
     }
 
@@ -140,6 +147,10 @@ def run_all(scenarios: list[Scenario] | None = None) -> dict:
         "all_audit_chains_verified": all(r["audit_verified"] for r in rows),
         "total_tokens": sum(r["tokens"] for r in rows),
         "total_tool_calls": sum(r["tool_calls"] for r in rows),
+        "total_model_latency_ms": round(
+            sum(r["model_latency_ms"] for r in rows), 1),
+        "total_est_cost_usd": round(
+            sum(r["est_cost_usd"] for r in rows), 6),
     }
 
     precision = aggregates["rca_precision_at_1"]
