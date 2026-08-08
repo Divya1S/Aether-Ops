@@ -80,6 +80,29 @@ class KnowledgeAgent(Agent):
         except KeyError:                     # no slack connector registered
             planned -= 1
 
+        # Runbook/postmortem retrieval through the RAG store: advisory
+        # guidance with full source attribution (rag://doc#offset). It is
+        # context for the diagnosis, not causal evidence — the Root Cause
+        # agent excludes these kinds from its coverage denominator.
+        if getattr(ctx, "rag", None) is not None:
+            planned += 1
+            query = f"{ctx.incident.title} {ctx.incident.description}"
+            seen_docs: set[str] = set()
+            for hit in ctx.rag.search(query, k=6):
+                if hit.chunk.doc_id in seen_docs:
+                    continue
+                seen_docs.add(hit.chunk.doc_id)
+                ctx.add_evidence(Evidence(
+                    id=new_id("ev"), kind=hit.chunk.doc_kind,
+                    summary=f"{hit.chunk.doc_title}: "
+                            f"{hit.chunk.text[:120]}",
+                    citation=Citation(
+                        source="aetherops-rag", ref=hit.ref,
+                        excerpt=hit.chunk.text[:200],
+                        retrieved_at=time.time())))
+                if len(seen_docs) == 2:
+                    break
+
         similar = ctx.memory.search(f"{service} OOMKilled pool latency deploy")
         for episode in similar:
             ctx.add_evidence(Evidence(

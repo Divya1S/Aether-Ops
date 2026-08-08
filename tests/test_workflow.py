@@ -40,11 +40,12 @@ class TestIncidentRemediation(unittest.TestCase):
         for name, result in ctx.results.items():
             self.assertTrue(result.citations, f"{name} has no citations")
 
-        # Evidence bundle includes the recalled prior episode
+        # Evidence bundle includes the recalled prior episode and retrieved
+        # runbook guidance (advisory — excluded from RCA coverage)
         kinds = {evidence.kind for evidence in ctx.evidence}
         self.assertEqual(
             kinds, {"alert", "metrics", "deploy", "commit", "k8s-event",
-                    "episode"})
+                    "episode", "runbook"})
 
         # Execution was dry-run and produced undo descriptors (saga contract)
         executed = run.checkpoint["execute"]["executed"]

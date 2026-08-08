@@ -19,6 +19,7 @@ from aetherops.gateway.backends import build_backend_chain
 from aetherops.gateway.model_gateway import ModelGateway
 from aetherops.memory.store import EpisodicMemory
 from aetherops.policy.engine import PolicyEngine
+from aetherops.rag.retriever import RagStore
 from aetherops.security.audit import AuditLog
 
 
@@ -151,4 +152,5 @@ def build_environment(scenario: Scenario, audit_path: str | None = None,
         "audit": audit,
         "memory": memory,
         "policy": PolicyEngine(),
+        "rag": RagStore(),
     }

@@ -10,6 +10,7 @@ import argparse
 import json
 
 from aetherops.evals.harness import run_all
+from aetherops.evals.retrieval import run_retrieval_eval
 
 RULE = "─" * 72
 
@@ -49,16 +50,32 @@ def main() -> int:
               f"precision={verdict['precision']} "
               f"mean_calibration_error={verdict['mean_calibration_error']}")
 
+    retrieval = run_retrieval_eval()
+    print(f"\n{RULE}\nRetrieval quality (labeled dataset, per chunking "
+          f"strategy)\n{RULE}")
+    for name, metrics in retrieval["strategies"].items():
+        marker = " ← best" if name == retrieval["best"] else ""
+        print(f"    {name:<10} chunks={metrics['chunks']:<3} "
+              f"P@1={metrics['precision_at_1']:.3f}  "
+              f"P@5={metrics['precision_at_5']:.3f}  "
+              f"R@5={metrics['recall_at_5']:.3f}  "
+              f"MRR={metrics['mrr']:.3f}{marker}")
+
     gate = report["release_gate"]
-    print(f"\n{RULE}\nRelease gate: {gate['criterion']} -> "
-          f"{'PASSED' if gate['passed'] else 'FAILED'}\n{RULE}")
+    retrieval_gate = retrieval["gate"]
+    print(f"\n{RULE}\nRelease gates\n{RULE}")
+    print(f"    {gate['criterion']} -> "
+          f"{'PASSED' if gate['passed'] else 'FAILED'}")
+    print(f"    {retrieval_gate['criterion']} -> "
+          f"{'PASSED' if retrieval_gate['passed'] else 'FAILED'}")
 
     if args.json:
+        report = {**report, "retrieval": retrieval}
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2)
         print(f"report written to {args.json}")
 
-    return 0 if gate["passed"] else 1
+    return 0 if (gate["passed"] and retrieval_gate["passed"]) else 1
 
 
 if __name__ == "__main__":

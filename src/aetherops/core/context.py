@@ -22,6 +22,7 @@ class WorkflowContext:
     policy: object = None   # policy.engine.PolicyEngine
     change: object = None   # core.types.ChangeEvent (change-risk workflow)
     graph: object = None    # graph.service_graph.ServiceGraph
+    rag: object = None      # rag.retriever.RagStore
     evidence: list[Evidence] = field(default_factory=list)
     results: dict[str, AgentResult] = field(default_factory=dict)
     params: dict = field(default_factory=dict)

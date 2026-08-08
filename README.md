@@ -21,9 +21,9 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 72 tests, pure stdlib — no network, no keys
+make test         # 85 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
-make eval         # golden-scenario evaluation + release gate
+make eval         # golden scenarios + retrieval quality, dual release gates
 make demo-live    # same incident, diagnosed by a real local model (free)
 ```
 
@@ -35,5 +35,14 @@ deterministic offline backend with the switch recorded in the audit ledger.
 Every model call is metered (backend, latency, tokens, estimated production
 cost) and each run prints its trace. Tests and evals always pin the offline
 backend, so golden-scenario replay never depends on what's installed.
+
+**Retrieval (RAG) is measured, not assumed:** agents retrieve runbook and
+postmortem guidance through a hybrid (keyword + vector) retriever with
+`rag://doc#offset` source attribution; chunking strategy and embedder are
+configuration (fixed vs. paragraph, stdlib TF-IDF vs. Ollama embeddings);
+and `make eval` scores retrieval against a hand-labeled query set —
+precision@1/precision@5/recall@5/MRR per chunking strategy, gated in CI.
+Each resolved incident's postmortem is ingested back into the store, so
+incident N's writeup is retrievable context for incident N+1.
 
 

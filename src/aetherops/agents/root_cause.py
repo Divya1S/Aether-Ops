@@ -59,7 +59,12 @@ class RootCauseAgent(Agent):
         suspect = self._suspect_commit(ctx)
         grounded = suspect is not None and suspect in response.text
         failure_class = self._classify(ctx, response.text)
-        coverage = len(cited_idx) / len(ctx.evidence)
+        # Coverage counts causal evidence only: retrieved runbook/postmortem
+        # guidance is advisory context and must not move diagnosis
+        # confidence (docs/17 M7 rule 3).
+        causal = [e for e in ctx.evidence
+                  if e.kind not in ("runbook", "postmortem")]
+        coverage = min(1.0, len(cited_idx) / max(1, len(causal)))
         cited = [ctx.evidence[i - 1] for i in cited_idx]
 
         return AgentResult(

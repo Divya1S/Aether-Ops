@@ -86,7 +86,18 @@ def _learn(ctx):
 
 
 def _postmortem(ctx):
-    return build_postmortem(ctx)
+    result = build_postmortem(ctx)
+    # Close the knowledge loop: incident N's postmortem becomes retrievable
+    # context for incident N+1 (docs/17 M7 rule 5).
+    if getattr(ctx, "rag", None) is not None:
+        from aetherops.rag.corpus import Document
+        chunks = ctx.rag.add_document(Document(
+            id=f"postmortem-{ctx.incident.id}",
+            title=f"Postmortem: {ctx.incident.title}",
+            kind="postmortem",
+            text=result["markdown"]))
+        result = {**result, "ingested_chunks": chunks}
+    return result
 
 
 def build_workflow() -> list[Node]:
@@ -116,7 +127,8 @@ def build_workflow() -> list[Node]:
 
 
 def run_incident_remediation(incident, *, connectors, gateway, audit, memory,
-                             policy, approvals: dict | None = None,
+                             policy, rag=None,
+                             approvals: dict | None = None,
                              checkpoint: dict | None = None,
                              ctx: WorkflowContext | None = None
                              ) -> tuple[DagRun, WorkflowContext]:
@@ -126,7 +138,7 @@ def run_incident_remediation(incident, *, connectors, gateway, audit, memory,
     if ctx is None:
         ctx = WorkflowContext(incident=incident, connectors=connectors,
                               gateway=gateway, audit=audit, memory=memory,
-                              policy=policy)
+                              policy=policy, rag=rag)
     executor = DagExecutor(build_workflow(), audit=audit,
                            sleeper=lambda seconds: None)
     run = executor.execute(ctx, approvals=approvals, checkpoint=checkpoint)
