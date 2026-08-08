@@ -2,7 +2,7 @@
 
 PY := PYTHONPATH=src python3
 
-.PHONY: demo demo-pause demo-deny demo-change demo-live test eval help
+.PHONY: demo demo-pause demo-deny demo-change demo-live serve docker test eval help
 
 help:
 	@echo "make demo         run the SEV2 vertical slice with auto-approval"
@@ -27,6 +27,13 @@ demo-change:
 
 demo-live:
 	$(PY) -m aetherops --approve --live
+
+serve:
+	$(PY) -m aetherops.api
+
+docker:
+	docker build -t aetherops:latest .
+	@echo "run: docker run --rm -p 8080:8080 aetherops:latest"
 
 test:
 	$(PY) -m unittest discover -s tests -v

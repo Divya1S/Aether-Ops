@@ -70,21 +70,40 @@ implementation of" — no claim of production deployment anywhere.
    anti-hallucination validation — federated retrieval over systems of
    record (no petabyte copying), evidence-coverage thresholds, and an
    "evidence or silence" rule that escalates instead of guessing.
-7. Designed an evaluation framework — golden datasets, replay harness,
-   LLM-as-judge fleet — driving a trust ladder that promotes or demotes
-   autonomy per (agent, failure-class) from advisory-only to gated writes to
-   auto-path on measured precision.
-8. Modeled unit economics end-to-end: ~$3–6 model + infra cost per automated
-   incident versus ~$2,100 of engineering time per manual SEV2, projecting
-   ~45–60k engineer-hours/month returned at maturity, with per-workflow
-   token budgets and storm-mode circuit breakers.
-9. Designed cell-based multi-region deployment: self-contained cells of all
-   five planes cap blast radius and pin data residency, with sanitized
-   async replication of organizational memory across cells.
-10. Built a reference implementation (pure Python stdlib) of the vertical
-    slice — deterministic DAG executor, agent contracts, policy engine,
-    model gateway with tier routing, hash-chained audit — demonstrating the
-    canonical SEV2 bad-deploy scenario end-to-end.
+7. Built an evaluation framework as code: golden-scenario replay harness
+   with RCA precision, calibration error, and citation-faithfulness
+   metrics driving a trust ladder (advisory → gated → auto-path per
+   failure class), enforced as CI release gates on every push.
+8. Built a RAG subsystem with measured retrieval quality: hybrid
+   keyword+vector search over attributed chunks (rag://doc#offset), two
+   comparable chunking strategies, swappable embedders (stdlib TF-IDF /
+   Ollama), and a 22-query labeled evaluation — fixed-window chunking
+   measured at precision@1 = 1.000 / MRR = 1.000 vs. paragraph at
+   0.955 / 0.977 — with each incident's generated postmortem ingested
+   back for future retrieval.
+9. Integrated a free local LLM (Ollama) behind an ordered fallback chain
+   with audited graceful degradation — kill the model mid-incident and
+   the workflow completes on the deterministic backend — plus per-call
+   latency, token, and estimated-cost metering feeding workflow traces
+   reconstructed from the audit ledger.
+10. Engineered LLM-security controls mapped to OWASP LLM Top 10 (2025)
+    with the attacks in the test suite: prompt-injection quarantine
+    (LLM01), governed execution via Step Catalog + approval gates
+    (LLM06 Excessive Agency), schema-validated agent outputs with
+    semantic retry (LLM05), and a versioned prompt registry whose
+    sha256 lockfile fails the build on unversioned prompt edits.
+11. Productionized the platform at zero infrastructure cost: an
+    authenticated REST API replaying approval-gate semantics over HTTP,
+    SQLite persistence with a tamper-evident audit chain, a Docker
+    image smoke-tested end to end, and an MCP server (JSON-RPC/stdio)
+    exposing platform tools to any MCP client.
+12. Modeled unit economics end-to-end (~$3–6 per automated incident vs
+    ~$2,100 manual; ~45–60k engineer-hours/month returned at maturity)
+    and designed cell-based multi-region deployment with data-residency
+    pinning — then made cost a measured number via per-call metering.
+13. Built the reference implementation pure-stdlib by design: 108 tests
+    and dual evaluation gates run in CI on Python 3.11–3.13 with no
+    dependencies, no network, and no API keys.
 
 ---
 

@@ -1,6 +1,7 @@
 # AetherOps
 
 [![CI](https://github.com/Divya1S/Aether-Ops/actions/workflows/ci.yml/badge.svg)](https://github.com/Divya1S/Aether-Ops/actions/workflows/ci.yml)
+**[Live demo →](https://divya1s.github.io/Aether-Ops/)**
 
 **Autonomous incident remediation & change-intelligence platform** — an
 enterprise AI system that closes the loop humans currently close at 3 a.m.:
@@ -21,7 +22,7 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 98 tests, pure stdlib — no network, no keys
+make test         # 108 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
 make eval         # golden scenarios + retrieval quality, dual release gates
 make demo-live    # same incident, diagnosed by a real local model (free)
@@ -54,5 +55,23 @@ is recorded in the audit ledger and listed in the generated postmortem. The
 security controls are mapped to the OWASP LLM Top 10 (2025) in
 [docs/05 §11](docs/05-security.md), with the LLM01/LLM06 attack tests in
 the suite.
+
+**Run it as a service:**
+
+```bash
+make serve        # authenticated REST API (stdlib) on :8080
+make docker       # or: docker compose up — same API, containerized
+```
+
+`POST /v1/incidents` starts an incident and runs it to the approval gate;
+`POST /v1/incidents/{id}/approvals {"decision":"approve"}` replays the exact
+gate semantics and returns the generated postmortem; `/v1/changes/score`,
+`/v1/evals`, and `/v1/runbooks/search` expose the rest. Every mutating
+endpoint requires `Authorization: Bearer $AETHEROPS_API_TOKEN`. State can
+persist across restarts via the SQLite-backed memory and tamper-evident
+audit ledger (`storage/sqlite.py`). There's also an **MCP server** —
+`python3 -m aetherops.mcp` speaks JSON-RPC over stdio so any MCP client
+(Claude Code included) can search runbooks and pull eval summaries straight
+from the platform.
 
 

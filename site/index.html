@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AetherOps — autonomous incident remediation, measured</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3;
+          --dim:#8b949e; --green:#3fb950; --amber:#d29922; --blue:#58a6ff;
+          --red:#f85149; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--fg);
+         font:16px/1.6 -apple-system,"Segoe UI",Roboto,sans-serif;
+         max-width:960px; margin:0 auto; padding:2rem 1rem 4rem; }
+  h1 { font-size:1.9rem; margin:0 0 .3rem; }
+  h2 { font-size:1.15rem; margin:2.2rem 0 .7rem; color:var(--blue); }
+  p  { margin:.6rem 0; color:var(--dim); }
+  p strong { color:var(--fg); }
+  a  { color:var(--blue); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .links { margin:.8rem 0 0; display:flex; gap:1rem; flex-wrap:wrap; }
+  .links a { border:1px solid var(--border); border-radius:6px;
+             padding:.35rem .8rem; font-size:.9rem; }
+  pre { background:var(--panel); border:1px solid var(--border);
+        border-radius:8px; padding:1rem; overflow-x:auto;
+        font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;
+        color:var(--fg); }
+  .g { color:var(--green); } .a { color:var(--amber); }
+  .b { color:var(--blue); } .r { color:var(--red); } .d { color:var(--dim); }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; }
+  th,td { border:1px solid var(--border); padding:.45rem .7rem;
+          text-align:left; }
+  th { background:var(--panel); }
+  .note { font-size:.85rem; }
+</style>
+</head>
+<body>
+<h1>AetherOps</h1>
+<p><strong>An autonomous incident-remediation &amp; change-intelligence
+platform</strong> — agents diagnose from cited evidence, plans compile from a
+vetted action catalog, humans approve at policy gates, and every quality
+claim below is a number measured by the repo's own CI. Pure Python stdlib;
+runs anywhere; costs nothing.</p>
+<div class="links">
+  <a href="https://github.com/Divya1S/Aether-Ops">GitHub repository</a>
+  <a href="https://github.com/Divya1S/Aether-Ops/actions">CI (tests + eval gates)</a>
+  <a href="https://github.com/Divya1S/Aether-Ops/blob/main/docs/01-architecture.md">Architecture docs</a>
+</div>
+
+<h2>The 60-second story: <span class="d">make demo</span></h2>
+<p>A SEV2 pages in — checkout-service p99 latency exploded after a deploy.
+The platform gathers a cited evidence bundle, diagnoses, plans from the Step
+Catalog, pauses at a tier-2 approval gate, executes reversibly, verifies,
+and writes the postmortem. Real captured output:</p>
+<pre><span class="d">Evidence bundle (gathered, cited, redacted at the gateway)</span>
+ [E1] (alert, pagerduty)  PagerDuty P-8842: p99 latency &gt; 2000ms
+ [E3] (deploy, github)    v2025.08.07-3 deployed 14:02, includes c9a1f42
+ [E4] (commit, github)    c9a1f42: Raise DB connection pool max_size 20 -&gt; 200
+ [E5] (k8s-event, k8s)    12 OOMKilled events across checkout-service pods
+ [E6] (runbook, rag)      "Investigating p99 latency spikes"  <span class="d">rag://runbook-latency#0</span>
+
+<span class="d">Diagnosis (deploy-regression/memory)  confidence=0.75</span>
+ Causal chain: deploy [E3] → pool change [E4] → memory exhaustion [E5]
+ → latency breach [E2]
+
+<span class="d">Remediation plan (Step Catalog actions only)</span>
+ - rollback_deployment   risk=HIGH    <span class="a">[R3-high-prod] tier-2 approval required</span>
+ - create_revert_pr      risk=MEDIUM
+
+<span class="a">PAUSED at gate 'approval_gate' — awaiting human approval</span>  →  approved
+ executed rollback_deployment  (dry-run, undo descriptor recorded)
+ executed create_revert_pr     PR #4127
+ <span class="g">verified: p99 recovered to 182ms · learned episode · postmortem generated</span>
+ <span class="g">audit records: 30 — hash-chain verified: True</span></pre>
+
+<h2>Diagnosed by a real local model: <span class="d">make demo-live</span></h2>
+<p>Same incident, every agent served by a free local model (Ollama,
+llama3.2:3b) through a fallback chain — kill the model mid-run and the
+workflow still completes, with the switch audited. Real trace:</p>
+<pre><span class="d">Trace (from the audit ledger)</span>
+ model  triage       ollama  ollama/llama3.2:3b   19944.6 ms    48→327 tok  $0.00168
+ model  root_cause   ollama  ollama/llama3.2:3b    8747.3 ms   708→256 tok  $0.00994
+ model  plan         ollama  ollama/llama3.2:3b    3091.0 ms   901→32  tok  $0.00530
+ model  review       ollama  ollama/llama3.2:3b    6165.2 ms    38→227 tok  $0.00352
+ model  verify       ollama  ollama/llama3.2:3b    9824.7 ms    54→361 tok  $0.00558
+ model  postmortem   ollama  ollama/llama3.2:3b   11540.2 ms    65→422 tok  $0.00217
+ <span class="d">totals: 6 model calls · 59.3 s model latency · est. production cost $0.028</span></pre>
+
+<h2>Quality is a gate, not a claim: <span class="d">make eval</span></h2>
+<table>
+<tr><th>Metric</th><th>Value</th><th>Gate</th></tr>
+<tr><td>RCA precision@1 (golden scenarios)</td><td>1.000</td>
+    <td class="g">≥ 0.6 — PASSED</td></tr>
+<tr><td>Escalation correctness (knows what it doesn't know)</td>
+    <td>1.000</td><td>—</td></tr>
+<tr><td>Citation faithfulness</td><td>1.000</td><td>—</td></tr>
+<tr><td>Mean calibration error</td><td>0.207</td><td>—</td></tr>
+<tr><td>Retrieval P@1 / MRR — fixed chunking</td><td>1.000 / 1.000</td>
+    <td class="g">≥ 0.6 — PASSED</td></tr>
+<tr><td>Retrieval P@1 / MRR — paragraph chunking</td><td>0.955 / 0.977</td>
+    <td>compared, not vibes</td></tr>
+</table>
+<p class="note">Both gates run in CI on Python 3.11/3.12/3.13 with zero
+dependencies and zero network — the numbers above are re-derived on every
+push.</p>
+
+<h2>Engineered like software, because it is</h2>
+<pre>
+ REST API      POST /v1/incidents → PAUSED at gate → POST .../approvals
+               {"decision":"approve"} → SUCCEEDED + postmortem  (bearer auth)
+ MCP server    python3 -m aetherops.mcp — JSON-RPC/stdio tools for any
+               MCP client: search_runbooks · list_runbooks · eval_summary
+ Docker        docker compose up — same API, containerized, healthchecked
+ Security      OWASP LLM Top 10 mapped; injection attack lives IN the
+               test suite (LLM01) and cannot mint actions (LLM06)
+ Governance    hash-chained audit ledger · versioned prompts w/ lockfile
+               · schema-validated agent outputs · saga rollback
+</pre>
+
+<p class="note">Built as a portfolio platform: 108 stdlib tests, 17 design
+docs with decision records, and a
+<a href="https://github.com/Divya1S/Aether-Ops/blob/main/docs/17-ai-engineer-gap-analysis.md">
+job-market gap analysis</a> that drove the roadmap. Everything on this page
+is reproducible from the repo with <span class="d">make test&nbsp;·&nbsp;make
+demo&nbsp;·&nbsp;make eval</span>.</p>
+</body>
+</html>

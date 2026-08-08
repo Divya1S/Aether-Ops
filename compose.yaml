@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      AETHEROPS_API_TOKEN: ${AETHEROPS_API_TOKEN:-aetherops-dev}
+      AETHEROPS_BACKENDS: ${AETHEROPS_BACKENDS:-offline}
