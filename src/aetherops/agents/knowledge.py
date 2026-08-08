@@ -19,6 +19,17 @@ from aetherops.core.types import AgentResult, Citation, Evidence, new_id
 class KnowledgeAgent(Agent):
     name = "knowledge"
     tier = "fast"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["evidence_count", "planned_queries", "gaps",
+                     "similar_episodes"],
+        "properties": {
+            "evidence_count": {"type": "integer"},
+            "planned_queries": {"type": "integer"},
+            "gaps": {"type": "array", "items": {"type": "string"}},
+            "similar_episodes": {"type": "array",
+                                 "items": {"type": "string"}},
+        }}
 
     def run(self, ctx) -> AgentResult:
         service = ctx.results["triage"].output["service"]

@@ -37,6 +37,22 @@ def screen_text(text: str) -> list[str]:
 class SecurityAgent(Agent):
     name = "security"
     tier = "fast"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["screened", "quarantined"],
+        "properties": {
+            "screened": {"type": "integer"},
+            "quarantined": {"type": "array", "items": {
+                "type": "object",
+                "required": ["evidence_id", "kind", "source", "patterns"],
+                "properties": {
+                    "evidence_id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "source": {"type": "string"},
+                    "patterns": {"type": "array",
+                                 "items": {"type": "string"}},
+                }}},
+        }}
 
     def run(self, ctx) -> AgentResult:
         quarantined: list[dict] = []

@@ -11,6 +11,7 @@ import re
 from aetherops.agents.base import Agent, PermanentError, score_confidence
 from aetherops.core.types import AgentResult
 from aetherops.gateway.model_gateway import TaskProfile
+from aetherops.prompts.registry import get_prompt
 
 _EREF = re.compile(r"\[E(\d+)\]")
 
@@ -18,21 +19,28 @@ _EREF = re.compile(r"\[E(\d+)\]")
 class RootCauseAgent(Agent):
     name = "root_cause"
     tier = "reasoning"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["status", "hypothesis"],
+        "properties": {
+            "status": {"type": "string",
+                       "enum": ["diagnosed", "insufficient-evidence"]},
+            "hypothesis": {"type": "string"},
+            "suspect_commit": {"type": ["string", "null"]},
+            "failure_class": {"type": "string"},
+            "cited_evidence": {"type": "array",
+                               "items": {"type": "string"}},
+        }}
 
     def run(self, ctx) -> AgentResult:
         digest = ctx.evidence_digest()
-        prompt = (
-            "[root_cause] Produce a causal hypothesis for this incident. "
-            "Cite evidence as [En] for every causal claim. The bundle below "
-            "is usually sufficient — prefer a cited hypothesis over refusal; "
-            "only if no change event correlates with the symptom, begin your "
-            "reply with exactly 'Insufficient evidence'. Otherwise end with "
-            "exactly one line 'Recommended class: <class>' where <class> is "
-            "one of: deploy-regression/memory, unclassified.\n"
-            f"Incident: {ctx.incident.title}\nEvidence bundle:\n{digest}")
+        template = get_prompt("root_cause")
         response = ctx.gateway.complete(
-            prompt, TaskProfile(task="root_cause", tier_hint=self.tier,
-                                severity=ctx.incident.severity))
+            template.render(title=ctx.incident.title, digest=digest),
+            TaskProfile(task="root_cause", tier_hint=self.tier,
+                        severity=ctx.incident.severity,
+                        prompt_id=template.id,
+                        prompt_version=template.version))
 
         cited_idx = sorted({int(m) for m in _EREF.findall(response.text)})
         invalid = [i for i in cited_idx if i < 1 or i > len(ctx.evidence)]

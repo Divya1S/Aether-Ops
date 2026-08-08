@@ -434,3 +434,23 @@ with no credentials (§4), no internet route, a tool allow-list (§3.2), and a
 gateway that will not accept a write from it (§2.3). The network layer is
 the last of the concentric rings, and it holds even if every layer above it
 fails.
+
+## 11. OWASP LLM Top 10 (2025) mapping
+
+The defenses above, restated in the industry's shared vocabulary. "Code"
+means implemented and exercised by the reference implementation's test
+suite; "design" means specified in these documents for the production
+build. The honest gaps are labeled — that honesty is part of the control.
+
+| OWASP ID | Risk | AetherOps control | Status |
+|---|---|---|---|
+| LLM01 | Prompt Injection | Retrieved content is quarantined data, never instructions: Security-agent screening, digest withholding with stable evidence numbering, and the attack itself in the test suite (`tests/test_security_agents.py`) | **Code** |
+| LLM02 | Sensitive Information Disclosure | Deterministic secret/PII redaction at the connector gateway before content reaches workflow state or any model; citation excerpts included (`security/redaction.py`, `connectors/base.py`) | **Code** |
+| LLM03 | Supply Chain | Reference implementation is pure stdlib (no third-party packages to poison); production model/version pinning per tenant (§7) | Code (narrow) + design |
+| LLM04 | Data & Model Poisoning | Golden datasets frozen with leakage hygiene ([10-evaluation.md](10-evaluation.md)); no fine-tuning on tenant data (§7) | Design |
+| LLM05 | Improper Output Handling | JSON-Schema validation of every agent output with semantic-retry-then-escalate (`core/schema.py`); citation-reference validation; plans compiled only from the vetted Step Catalog | **Code** |
+| LLM06 | Excessive Agency | The load-bearing control: agents propose, they never execute — typed Step Catalog with risk classes, policy tiers, human approval gates, independent Reviewer verification, saga compensation (`policy/engine.py`, `orchestration/dag.py`, `agents/reviewer.py`) | **Code** |
+| LLM07 | System Prompt Leakage | Prompts are versioned registry artifacts containing no secrets by construction (`prompts/registry.py`); canary strings in production prompts (§6) | Code + design |
+| LLM08 | Vector & Embedding Weaknesses | Retrieval carries per-chunk source attribution (rag://doc#offset); retrieved guidance is advisory-only (excluded from diagnosis confidence); retrieval quality measured against labeled data in CI (`rag/`, `evals/retrieval.py`) | **Code** |
+| LLM09 | Misinformation | Citations mandatory (no-citation-no-claim enforced in the agent wrapper); "insufficient evidence" escalation; calibration error measured per agent ([10-evaluation.md](10-evaluation.md)) | **Code** |
+| LLM10 | Unbounded Consumption | Per-tool rate limiting (`connectors/base.py`), token/cost metering per call; production budgets and storm-mode shedding ([08-scalability.md](08-scalability.md)) | Code (partial) + design |

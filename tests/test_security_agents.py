@@ -1,7 +1,13 @@
 """Security agent (injection quarantine) and Reviewer agent (independent plan
 verification). The attack is the test: a prompt injection planted in
 retrieved Slack evidence must be quarantined, must never reach a model
-prompt, must not mint actions, and must not bypass the approval gate."""
+prompt, must not mint actions, and must not bypass the approval gate.
+
+OWASP LLM Top 10 (2025) coverage — see docs/05 §11:
+- LLM01 Prompt Injection: TestInjectionScreening (quarantine + withholding)
+- LLM06 Excessive Agency: TestInjectionScreening (injected text cannot mint
+  actions or bypass gates) and TestReviewer (tampered plans rejected before
+  any human is asked)."""
 import dataclasses
 import unittest
 

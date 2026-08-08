@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 
 from aetherops.gateway.model_gateway import TaskProfile
+from aetherops.prompts.registry import get_prompt
 
 # Failure-class-specific preventive actions — the maintained half of the
 # follow-up list; dynamic items (e.g. the revert PR) come from the run itself.
@@ -45,14 +46,18 @@ def build_postmortem(ctx) -> dict:
                   for record in executed if record["result"].get("pr_url")]
     follow_ups += FOLLOW_UPS.get(rca.output.get("failure_class", ""), [])
 
+    template = get_prompt("postmortem")
     narrative = ctx.gateway.complete(
-        f"[postmortem] service={service} "
-        f"failure_class={rca.output.get('failure_class')} "
-        f"suspect={rca.output.get('suspect_commit')} "
-        f"steps={[s['action'] for s in plan.output['steps']]} "
-        f"recovered_p99={p99}",
+        template.render(
+            service=service,
+            failure_class=rca.output.get("failure_class"),
+            suspect=rca.output.get("suspect_commit"),
+            steps=[s["action"] for s in plan.output["steps"]],
+            p99=p99),
         TaskProfile(task="postmortem", tier_hint="fast",
-                    severity=incident.severity)).text
+                    severity=incident.severity,
+                    prompt_id=template.id,
+                    prompt_version=template.version)).text
 
     timeline: list[tuple[float, str]] = []
     for record in ctx.audit.records:
@@ -128,6 +133,14 @@ def build_postmortem(ctx) -> dict:
         f"{ctx.audit.verify()}")
     add(f"- Model tokens metered: {ctx.gateway.tokens_used}; "
         f"models: {', '.join(models)}")
+    prompt_versions: list[str] = []
+    for record in ctx.audit.records:
+        if record.action == "model.call":
+            identity = record.payload.get("prompt")
+            if identity and identity not in prompt_versions:
+                prompt_versions.append(identity)
+    add(f"- Prompt versions: "
+        f"{', '.join(prompt_versions) if prompt_versions else 'n/a'}")
 
     markdown = "\n".join(lines) + "\n"
     return {"markdown": markdown, "follow_ups": follow_ups,

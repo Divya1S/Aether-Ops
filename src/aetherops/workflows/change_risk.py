@@ -15,6 +15,7 @@ from aetherops.core.context import WorkflowContext
 from aetherops.core.types import RiskLevel
 from aetherops.gateway.model_gateway import TaskProfile
 from aetherops.orchestration.dag import DagExecutor, DagRun, GateSpec, Node
+from aetherops.prompts.registry import get_prompt
 from aetherops.workflows.incident_remediation import _agent_node
 
 # Fixed scoring weights. HIGH >= 70, MEDIUM >= 40, else LOW.
@@ -45,12 +46,15 @@ def _score(ctx):
         peak_window=bool(ctx.change.labels.get("peak_window")),
         service_incident_count=intel["service_incident_count"])
 
+    template = get_prompt("change_risk")
     rationale = ctx.gateway.complete(
-        f"[change_risk] service={ctx.change.service} "
-        f"matched={len(intel['matched_episodes'])} "
-        f"blast_radius={intel['blast_radius']} "
-        f"band={verdict['band']} score={verdict['score']}",
-        TaskProfile(task="change_risk", tier_hint="fast"))
+        template.render(service=ctx.change.service,
+                        matched=len(intel["matched_episodes"]),
+                        blast_radius=intel["blast_radius"],
+                        band=verdict["band"], score=verdict["score"]),
+        TaskProfile(task="change_risk", tier_hint="fast",
+                    prompt_id=template.id,
+                    prompt_version=template.version))
 
     verdict = {**verdict, "rationale": rationale.text}
     ctx.params["score_verdict"] = verdict     # for downstream deterministic nodes

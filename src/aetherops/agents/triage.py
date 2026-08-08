@@ -8,6 +8,7 @@ from __future__ import annotations
 from aetherops.agents.base import Agent, score_confidence
 from aetherops.core.types import AgentResult, Evidence, Severity, new_id
 from aetherops.gateway.model_gateway import TaskProfile
+from aetherops.prompts.registry import get_prompt
 
 
 _SEVERITY_RULES = {
@@ -21,6 +22,15 @@ _SEVERITY_RULES = {
 class TriageAgent(Agent):
     name = "triage"
     tier = "fast"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["severity", "service", "summary"],
+        "properties": {
+            "severity": {"type": "string",
+                         "enum": ["SEV1", "SEV2", "SEV3", "SEV4"]},
+            "service": {"type": "string"},
+            "summary": {"type": "string"},
+        }}
 
     def run(self, ctx) -> AgentResult:
         alert = ctx.connectors.call(
@@ -37,11 +47,14 @@ class TriageAgent(Agent):
             (alert.data["urgency"], bool(alert.data.get("customer_impact"))),
             Severity.SEV3)
 
+        prompt = get_prompt("triage")
         response = ctx.gateway.complete(
-            f"[triage] alert: {alert.data['title']} "
-            f"service={alert.data['service']} urgency={alert.data['urgency']}",
+            prompt.render(title=alert.data["title"],
+                          service=alert.data["service"],
+                          urgency=alert.data["urgency"]),
             TaskProfile(task="triage", tier_hint=self.tier,
-                        severity=ctx.incident.severity))
+                        severity=ctx.incident.severity,
+                        prompt_id=prompt.id, prompt_version=prompt.version))
 
         return AgentResult(
             agent=self.name,

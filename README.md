@@ -21,7 +21,7 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 85 tests, pure stdlib — no network, no keys
+make test         # 98 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
 make eval         # golden scenarios + retrieval quality, dual release gates
 make demo-live    # same incident, diagnosed by a real local model (free)
@@ -44,5 +44,15 @@ and `make eval` scores retrieval against a hand-labeled query set —
 precision@1/precision@5/recall@5/MRR per chunking strategy, gated in CI.
 Each resolved incident's postmortem is ingested back into the store, so
 incident N's writeup is retrievable context for incident N+1.
+
+**Outputs are contracts, prompts are artifacts:** every agent declares a
+JSON-Schema output contract enforced at the workflow layer (one semantic
+retry on violation, then escalation); every prompt is a versioned registry
+entry whose sha256 is pinned in a lockfile — editing a template without
+bumping its version fails the build — and each model call's `prompt@version`
+is recorded in the audit ledger and listed in the generated postmortem. The
+security controls are mapped to the OWASP LLM Top 10 (2025) in
+[docs/05 §11](docs/05-security.md), with the LLM01/LLM06 attack tests in
+the suite.
 
 

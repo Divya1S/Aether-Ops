@@ -15,6 +15,17 @@ from aetherops.core.types import AgentResult, Citation, Evidence, new_id
 class ChangeIntelligenceAgent(Agent):
     name = "change_intel"
     tier = "standard"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["matched_episodes", "blast_radius", "dependents",
+                     "service_incident_count"],
+        "properties": {
+            "matched_episodes": {"type": "array",
+                                 "items": {"type": "string"}},
+            "blast_radius": {"type": "integer"},
+            "dependents": {"type": "array", "items": {"type": "string"}},
+            "service_incident_count": {"type": "integer"},
+        }}
 
     def run(self, ctx) -> AgentResult:
         change = ctx.change

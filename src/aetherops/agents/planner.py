@@ -8,6 +8,7 @@ from __future__ import annotations
 from aetherops.agents.base import Agent, PermanentError, score_confidence
 from aetherops.core.types import AgentResult
 from aetherops.gateway.model_gateway import TaskProfile
+from aetherops.prompts.registry import get_prompt
 
 # The vetted action catalog: the only verbs the platform can execute.
 # Production: versioned registry with arg schemas, OPA annotations, and
@@ -27,19 +28,41 @@ STEP_CATALOG: dict[str, dict] = {
 class PlannerAgent(Agent):
     name = "planner"
     tier = "reasoning"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["steps", "rationale"],
+        "properties": {
+            "rationale": {"type": "string"},
+            "steps": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["action", "system", "tool", "args", "risk",
+                             "compensable"],
+                "properties": {
+                    "action": {"type": "string"},
+                    "system": {"type": "string"},
+                    "tool": {"type": "string"},
+                    "args": {"type": "object"},
+                    "risk": {"type": "string",
+                             "enum": ["READ", "LOW", "MEDIUM", "HIGH",
+                                      "CRITICAL"]},
+                    "compensable": {"type": "boolean"},
+                }}},
+        }}
 
     def run(self, ctx) -> AgentResult:
         rca = ctx.results["root_cause"]
         if rca.output.get("status") != "diagnosed":
             raise PermanentError("cannot plan without a diagnosis — escalate")
 
+        template = get_prompt("plan")
         response = ctx.gateway.complete(
-            "[plan] Propose remediation as Step Catalog actions only.\n"
-            f"Diagnosis: {rca.output['hypothesis']}\n"
-            f"Catalog: {sorted(STEP_CATALOG)}\n"
-            f"Evidence bundle:\n{ctx.evidence_digest()}",
+            template.render(hypothesis=rca.output["hypothesis"],
+                            catalog=sorted(STEP_CATALOG),
+                            digest=ctx.evidence_digest()),
             TaskProfile(task="plan", tier_hint=self.tier,
-                        severity=ctx.incident.severity))
+                        severity=ctx.incident.severity,
+                        prompt_id=template.id,
+                        prompt_version=template.version))
 
         # Reference slice: deterministic mapping from failure class to
         # proposed actions (production: parsed from the schema-validated LLM

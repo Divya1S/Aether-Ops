@@ -9,6 +9,7 @@ from __future__ import annotations
 from aetherops.agents.base import Agent, PermanentError, score_confidence
 from aetherops.core.types import AgentResult
 from aetherops.gateway.model_gateway import TaskProfile
+from aetherops.prompts.registry import get_prompt
 
 P99_BASELINE_MS = 300
 
@@ -16,6 +17,14 @@ P99_BASELINE_MS = 300
 class VerifierAgent(Agent):
     name = "verifier"
     tier = "standard"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["recovered", "p99_ms", "note"],
+        "properties": {
+            "recovered": {"type": "boolean"},
+            "p99_ms": {"type": "number"},
+            "note": {"type": "string"},
+        }}
 
     def run(self, ctx) -> AgentResult:
         service = ctx.results["triage"].output["service"]
@@ -27,12 +36,15 @@ class VerifierAgent(Agent):
         recovered = (latest_p99 <= P99_BASELINE_MS
                      and metrics.data.get("oomkilled_events_last_10m", 0) == 0)
 
+        template = get_prompt("verify")
         response = ctx.gateway.complete(
-            f"[verify] post-remediation p99={latest_p99}ms, "
-            f"baseline={P99_BASELINE_MS}ms, "
-            f"oomkilled_last_10m={metrics.data.get('oomkilled_events_last_10m')}",
+            template.render(
+                p99=latest_p99, baseline=P99_BASELINE_MS,
+                oomkilled=metrics.data.get("oomkilled_events_last_10m")),
             TaskProfile(task="verify", tier_hint=self.tier,
-                        severity=ctx.incident.severity))
+                        severity=ctx.incident.severity,
+                        prompt_id=template.id,
+                        prompt_version=template.version))
 
         if not recovered:
             raise PermanentError(

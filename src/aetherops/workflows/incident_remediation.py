@@ -20,17 +20,35 @@ from aetherops.agents.security import SecurityAgent
 from aetherops.agents.triage import TriageAgent
 from aetherops.agents.verifier import VerifierAgent
 from aetherops.core.context import WorkflowContext
+from aetherops.core.schema import validate
 from aetherops.core.types import RiskLevel
 from aetherops.orchestration.dag import DagExecutor, DagRun, GateSpec, Node
 from aetherops.reporting.postmortem import build_postmortem
 
 
 def _agent_node(agent):
+    """Wraps an agent as a DAG node, enforcing the two output contracts:
+    citations are mandatory, and the output must validate against the
+    agent's declared schema. A schema violation gets ONE semantic retry
+    (docs/02 §4 — meaningful for nondeterministic live backends), then
+    escalates."""
     def run(ctx):
-        result = agent.run(ctx)
-        if not result.citations:
-            raise PermanentError(
-                f"{agent.name}: result carries no citations — claim rejected")
+        attempts = 0
+        while True:
+            attempts += 1
+            result = agent.run(ctx)
+            if not result.citations:
+                raise PermanentError(
+                    f"{agent.name}: result carries no citations — "
+                    "claim rejected")
+            schema = getattr(agent, "output_schema", None)
+            errors = validate(result.output, schema) if schema else []
+            if not errors:
+                break
+            if attempts >= 2:
+                raise PermanentError(
+                    f"{agent.name}: output failed schema validation after "
+                    f"semantic retry — escalate ({errors[:3]})")
         ctx.record(result)
         return result.to_checkpoint()
     return run

@@ -10,11 +10,27 @@ from aetherops.agents.base import Agent, PermanentError, score_confidence
 from aetherops.agents.planner import STEP_CATALOG
 from aetherops.core.types import AgentResult
 from aetherops.gateway.model_gateway import TaskProfile
+from aetherops.prompts.registry import get_prompt
 
 
 class ReviewerAgent(Agent):
     name = "reviewer"
     tier = "standard"
+    output_schema = {
+        "type": "object", "additionalProperties": False,
+        "required": ["verdict", "checks", "note"],
+        "properties": {
+            "verdict": {"type": "string", "enum": ["approve"]},
+            "note": {"type": "string"},
+            "checks": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["name", "passed", "note"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "passed": {"type": "boolean"},
+                    "note": {"type": "string"},
+                }}},
+        }}
 
     def run(self, ctx) -> AgentResult:
         plan = ctx.results["planner"]
@@ -63,10 +79,14 @@ class ReviewerAgent(Agent):
               "a deploy regression plan must reverse the deploy")
 
         passed = sum(1 for c in checks if c["passed"])
+        template = get_prompt("review")
         response = ctx.gateway.complete(
-            f"[review] checks_passed={passed}/{len(checks)} service={service}",
+            template.render(passed=passed, total=len(checks),
+                            service=service),
             TaskProfile(task="review", tier_hint=self.tier,
-                        severity=ctx.incident.severity))
+                        severity=ctx.incident.severity,
+                        prompt_id=template.id,
+                        prompt_version=template.version))
 
         failed = [c["name"] for c in checks if not c["passed"]]
         if failed:

@@ -48,6 +48,8 @@ class TaskProfile:
     task: str                       # "triage" | "root_cause" | "plan" | ...
     tier_hint: str = "standard"
     severity: Severity | None = None
+    prompt_id: str = ""             # registry identity for traceability
+    prompt_version: str = ""
 
 
 @dataclass(frozen=True)
@@ -115,17 +117,20 @@ class ModelGateway:
             self.est_cost_usd = round(self.est_cost_usd + est_cost, 6)
 
             if self._audit is not None:
-                self._audit.append(
-                    actor="model-gateway", action="model.call",
-                    payload={"task": profile.task, "tier": tier,
-                             "model_id": model_id,
-                             "backend": getattr(backend, "name",
-                                                type(backend).__name__),
-                             "served_model": result.served_model,
-                             "tokens_in": result.tokens_in,
-                             "tokens_out": result.tokens_out,
-                             "latency_ms": latency_ms,
-                             "est_cost_usd": est_cost})
+                payload = {"task": profile.task, "tier": tier,
+                           "model_id": model_id,
+                           "backend": getattr(backend, "name",
+                                              type(backend).__name__),
+                           "served_model": result.served_model,
+                           "tokens_in": result.tokens_in,
+                           "tokens_out": result.tokens_out,
+                           "latency_ms": latency_ms,
+                           "est_cost_usd": est_cost}
+                if profile.prompt_id:
+                    payload["prompt"] = (f"{profile.prompt_id}"
+                                         f"@{profile.prompt_version}")
+                self._audit.append(actor="model-gateway",
+                                   action="model.call", payload=payload)
 
             return ModelResponse(
                 text=result.text, model_id=model_id, tier=tier,
