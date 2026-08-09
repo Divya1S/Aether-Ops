@@ -23,6 +23,9 @@ def respond(prompt: str, task: str) -> str:
     if task == "root_cause":
         return _diagnose(prompt)
 
+    if task == "judge":
+        return _judge(prompt)
+
     if task == "investigate":
         return _investigate(prompt)
 
@@ -77,6 +80,36 @@ def respond(prompt: str, task: str) -> str:
                 "last 10 minutes.")
 
     return "Summary: " + prompt[:200]
+
+
+def _judge(prompt: str) -> str:
+    """Deterministic judge policy: scores from checkable signals in the
+    hypothesis, so CI grades generated-content quality reproducibly. Live
+    (Ollama) replaces this with a real model judgement."""
+    count_match = re.search(r"evidence_items=(\d+)", prompt)
+    evidence_count = int(count_match.group(1)) if count_match else 0
+    # The artifact is everything after the "Hypothesis:" marker.
+    artifact = prompt.split("Hypothesis:", 1)[-1]
+    refs = sorted({int(n) for n in re.findall(r"\[E(\d+)\]", artifact)})
+    hallucinated = [f"E{n}" for n in refs
+                    if n < 1 or (evidence_count and n > evidence_count)]
+
+    if "Insufficient evidence" in artifact:
+        causal = 2
+    elif "Causal chain:" in artifact and re.search(r"[0-9a-f]{7,40}", artifact):
+        causal = 5
+    elif refs:
+        causal = 4
+    else:
+        causal = 3
+    grounding = 5 if (refs and not hallucinated) else 2 if hallucinated else 3
+    body = artifact.split("Evidence digest:", 1)[0]
+    clarity = 5 if 120 <= len(body) <= 1400 else 4
+    faithfulness = 1 if hallucinated else 5
+    return json.dumps({"causal_correctness": causal, "grounding": grounding,
+                       "clarity": clarity,
+                       "citation_faithfulness": faithfulness,
+                       "hallucinated_refs": hallucinated})
 
 
 def _investigate(prompt: str) -> str:

@@ -75,17 +75,34 @@ def main() -> int:
                   f"class={row['predicted_class']} steps={row['steps']} "
                   f"inv_steps={row['investigation_steps']} "
                   f"latency={row['model_latency_ms']:.0f}ms")
+        lj = live["aggregates"]["judge"]
         print(f"    live rca_precision_at_1="
-              f"{live['aggregates']['rca_precision_at_1']} "
-              f"(offline gate remains the release criterion)")
+              f"{live['aggregates']['rca_precision_at_1']}  "
+              f"live judge mean_overall={lj['mean_overall']}  "
+              f"live hallucinated_refs={lj['total_hallucinated_refs']} "
+              f"(offline gates remain the release criterion)")
+
+    judge = report["aggregates"]["judge"]
+    print(f"\n{RULE}\nLLM-as-judge on generated hypotheses "
+          f"(anchored by a deterministic citation check)\n{RULE}")
+    print(f"    judged={judge['judged']}  "
+          f"mean_overall={judge['mean_overall']}  "
+          f"causal={judge.get('mean_causal_correctness')}  "
+          f"grounding={judge.get('mean_grounding')}  "
+          f"clarity={judge.get('mean_clarity')}")
+    print(f"    hallucinated_refs={judge['total_hallucinated_refs']}  "
+          f"judge_vs_anchor_disagreements={judge['judge_disagreements']}")
 
     gate = report["release_gate"]
     retrieval_gate = retrieval["gate"]
+    judge_gate = report["judge_gate"]
     print(f"\n{RULE}\nRelease gates\n{RULE}")
     print(f"    {gate['criterion']} -> "
           f"{'PASSED' if gate['passed'] else 'FAILED'}")
     print(f"    {retrieval_gate['criterion']} -> "
           f"{'PASSED' if retrieval_gate['passed'] else 'FAILED'}")
+    print(f"    {judge_gate['criterion']} -> "
+          f"{'PASSED' if judge_gate['passed'] else 'FAILED'}")
 
     if args.json:
         report = {**report, "retrieval": retrieval}
@@ -93,7 +110,8 @@ def main() -> int:
             json.dump(report, fh, indent=2)
         print(f"report written to {args.json}")
 
-    return 0 if (gate["passed"] and retrieval_gate["passed"]) else 1
+    return 0 if (gate["passed"] and retrieval_gate["passed"]
+                 and judge_gate["passed"]) else 1
 
 
 if __name__ == "__main__":

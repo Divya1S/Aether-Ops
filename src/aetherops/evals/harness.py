@@ -9,6 +9,8 @@ calibration — the platform earns trust by knowing what it doesn't know.
 from __future__ import annotations
 
 from aetherops.core.types import WorkflowStatus
+from aetherops.evals.judge import aggregate as aggregate_judge
+from aetherops.evals.judge import judge_hypothesis
 from aetherops.evals.scenarios import Scenario, all_scenarios, build_environment
 from aetherops.workflows.incident_remediation import run_incident_remediation
 
@@ -61,6 +63,15 @@ def run_scenario(scenario: Scenario,
         verification_passed = bool(
             run.checkpoint.get("verify", {}).get("output", {}).get("recovered"))
 
+    # LLM-as-judge on the generated hypothesis (quality of prose the
+    # deterministic metrics can't grade), anchored by a deterministic
+    # citation check. Only diagnosed incidents have a hypothesis to judge.
+    judgement = None
+    if diagnosed and rca.output.get("hypothesis"):
+        judgement = judge_hypothesis(
+            env["gateway"], rca.output["hypothesis"],
+            len(ctx.evidence), ctx.evidence_digest())
+
     return {
         "scenario": scenario.id,
         "name": scenario.name,
@@ -98,6 +109,7 @@ def run_scenario(scenario: Scenario,
             if record.action == "model.call"), 1),
         "est_cost_usd": env["gateway"].est_cost_usd,
         "audit_verified": env["audit"].verify(),
+        "judge": judgement,
     }
 
 
@@ -158,6 +170,7 @@ def run_all(scenarios: list[Scenario] | None = None,
         "mean_calibration_error": round(
             sum(r["calibration_error"] for r in rows) / len(rows), 3),
         "all_audit_chains_verified": all(r["audit_verified"] for r in rows),
+        "judge": aggregate_judge([r["judge"] for r in rows if r["judge"]]),
         "total_tokens": sum(r["tokens"] for r in rows),
         "total_tool_calls": sum(r["tool_calls"] for r in rows),
         "total_model_latency_ms": round(
@@ -168,6 +181,11 @@ def run_all(scenarios: list[Scenario] | None = None,
 
     precision = aggregates["rca_precision_at_1"]
     gate_passed = precision is not None and precision >= RCA_PRECISION_GATE
+    # The judge's deterministic anchor gates CI: zero hallucinated citations
+    # across every judged hypothesis. The judge's subjective quality scores
+    # are reported, never gated (gating my own offline policy would be
+    # theatre; a live judge's scores are advisory).
+    judge_faithful = aggregates["judge"]["faithful_all"]
 
     return {
         "rows": rows,
@@ -176,5 +194,9 @@ def run_all(scenarios: list[Scenario] | None = None,
         "release_gate": {
             "criterion": f"rca_precision_at_1 >= {RCA_PRECISION_GATE}",
             "passed": gate_passed,
+        },
+        "judge_gate": {
+            "criterion": "judge citation anchor: 0 hallucinated refs",
+            "passed": judge_faithful,
         },
     }

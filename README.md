@@ -22,7 +22,7 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 133 tests, pure stdlib — no network, no keys
+make test         # 141 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
 make eval         # golden scenarios (n=4) + retrieval quality, dual gates
 make demo-live    # same incident, diagnosed by a real local model (free)
@@ -49,7 +49,15 @@ self-authored scenarios spanning two diagnosable failure classes
 gate the *pipeline* deterministically; `make eval --live` additionally
 reports (never gates) real-model behavior on the same set. The trust
 ladder demands sample size, not just precision: a correct-but-single-
-episode class stays advisory-only.
+episode class stays advisory-only. Deterministic metrics can't grade the
+*quality of generated prose*, so an **LLM-as-judge** scores each root-cause
+hypothesis on causal correctness, grounding, and clarity — but its
+subjective scores are never trusted blind: a deterministic citation check
+computes ground truth (which `[En]` references actually exist) and
+*overrides* the judge on faithfulness, flagging disagreement. The
+deterministic anchor gates CI (zero hallucinated citations); the judge's
+quality scores are reported. Offline the judge is a reproducible policy;
+`make eval --live` runs a real-model judge over the same set.
 Each resolved incident's postmortem is ingested back into the store, so
 incident N's writeup is retrievable context for incident N+1.
 

@@ -82,6 +82,16 @@ _TEMPLATES = [
         "[change_risk] service={service} matched={matched} "
         "blast_radius={blast_radius} band={band} score={score}"),
     PromptTemplate(
+        "judge", "1.0.0",
+        "[judge] Score this generated root-cause hypothesis for quality. "
+        "The evidence bundle has {evidence_items} items numbered "
+        "[E1]..[E{evidence_items}]. Reply with ONLY a JSON object:\n"
+        '{{"causal_correctness": 1-5, "grounding": 1-5, "clarity": 1-5, '
+        '"citation_faithfulness": 1-5, "hallucinated_refs": ["En", ...]}}\n'
+        "where hallucinated_refs lists any [En] the hypothesis cites that "
+        "does not exist in the bundle.\n"
+        "Hypothesis:\n{artifact}\nEvidence digest:\n{digest}"),
+    PromptTemplate(
         "postmortem", "1.0.0",
         "[postmortem] service={service} failure_class={failure_class} "
         "suspect={suspect} steps={steps} recovered_p99={p99}"),
