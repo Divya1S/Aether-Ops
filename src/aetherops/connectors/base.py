@@ -62,12 +62,31 @@ class Connector:
         self._cache: dict[str, ToolResult] = {}
         self._call_times: dict[str, deque] = {}
 
+    # The only principal permitted to invoke write-risk tools: the Control
+    # plane's executor node. Agents retrieve; they never write — enforced
+    # here as mechanism, not convention (OWASP LLM06; PROMPT-10 layer 2).
+    WRITE_PRINCIPAL = "executor"
+
     def call(self, tool: str, args: dict | None = None,
              principal: str = "workflow") -> ToolResult:
         args = args or {}
         spec = self.TOOLS.get(tool)
         if spec is None:
             raise ValueError(f"{self.system}: undeclared tool {tool!r}")
+
+        if (spec.risk >= RiskLevel.MEDIUM
+                and principal != self.WRITE_PRINCIPAL):
+            if self._audit is not None:
+                self._audit.append(
+                    actor=principal, action="tool.denied",
+                    payload={"system": self.system, "tool": tool,
+                             "risk": spec.risk.name,
+                             "reason": "write-risk tools require the "
+                                       "executor principal"})
+            raise PermissionError(
+                f"{self.system}.{tool}: {spec.risk.name}-risk tool denied "
+                f"for principal {principal!r} — writes go through the "
+                "Control plane's executor only")
 
         self._check_rate(spec)
 

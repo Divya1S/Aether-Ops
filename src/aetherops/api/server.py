@@ -37,14 +37,25 @@ from aetherops.workflows.change_risk import run_change_risk
 from aetherops.workflows.incident_remediation import run_incident_remediation
 
 
-def _token() -> str:
-    return os.environ.get("AETHEROPS_API_TOKEN", "aetherops-dev")
+def _tokens() -> dict[str, str]:
+    """Token → role registry (docs/05 §2). The primary token is admin for
+    back-compatibility; scoped tokens are opt-in via environment."""
+    registry = {os.environ.get("AETHEROPS_API_TOKEN",
+                               "aetherops-dev"): "admin"}
+    for env_var, role in (("AETHEROPS_VIEWER_TOKEN", "viewer"),
+                          ("AETHEROPS_OPERATOR_TOKEN", "operator"),
+                          ("AETHEROPS_APPROVER_TOKEN", "approver")):
+        token = os.environ.get(env_var)
+        if token:
+            registry[token] = role
+    return registry
 
 
 class AppState:
     def __init__(self):
         self.incidents: dict[str, dict] = {}
         self.rag = RagStore()
+        self.tokens = _tokens()
 
 
 STATE = AppState()
@@ -89,15 +100,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _authorized(self) -> bool:
-        return (self.headers.get("Authorization", "")
-                == f"Bearer {_token()}")
+    def _role(self) -> str | None:
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            return None
+        return STATE.tokens.get(header[len("Bearer "):])
 
-    def _require_auth(self) -> bool:
-        if self._authorized():
-            return True
-        self._send(401, {"error": "missing or invalid bearer token"})
-        return False
+    def _require(self, action: str) -> bool:
+        """Access control before anything runs: 401 unknown token, 403
+        known token whose role the policy table doesn't grant `action`."""
+        role = self._role()
+        if role is None:
+            self._send(401, {"error": "missing or invalid bearer token"})
+            return False
+        if not PolicyEngine.role_allows(role, action):
+            self._send(403, {"error": f"role {role!r} may not {action}"})
+            return False
+        return True
 
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)
@@ -120,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": "ok", "service": "aetherops",
                 "version": __version__,
                 "backends": os.environ.get("AETHEROPS_BACKENDS", "offline")})
-        if not self._require_auth():
+        if not self._require("read"):
             return
         if parsed.path == "/v1/evals":
             report = run_all()
@@ -147,10 +166,10 @@ class Handler(BaseHTTPRequestHandler):
     # ----------------------------------------------------------------- POST
     def do_POST(self):
         parsed = urlparse(self.path)
-        if not self._require_auth():
-            return
 
         if parsed.path == "/v1/incidents":
+            if not self._require("create"):
+                return
             incident, env = build_demo_environment()
             run, ctx = run_incident_remediation(incident, **env)
             STATE.incidents[incident.id] = {
@@ -160,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if (parsed.path.startswith("/v1/incidents/")
                 and parsed.path.endswith("/approvals")):
+            if not self._require("approve"):
+                return
             incident_id = parsed.path.split("/")[3]
             entry = STATE.incidents.get(incident_id)
             if entry is None:
@@ -185,6 +206,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, response)
 
         if parsed.path == "/v1/changes/score":
+            if not self._require("create"):
+                return
             body = self._body()
             change = ChangeEvent(
                 id=new_id("chg"),
@@ -211,6 +234,9 @@ class Handler(BaseHTTPRequestHandler):
                 "canary_required": decision.get("canary_required"),
                 "error": run.error})
 
+        if self._role() is None:      # unknown routes still demand a token
+            return self._send(401, {"error": "missing or invalid bearer "
+                                             "token"})
         self._send(404, {"error": "unknown route"})
 
 

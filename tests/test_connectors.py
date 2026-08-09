@@ -23,8 +23,8 @@ class TestGatewayContract(unittest.TestCase):
         self.assertFalse(first.cached)
         self.assertTrue(second.cached)
 
-        pr1 = github.call("create_revert_pr", {"sha": "c9a1f42"})
-        pr2 = github.call("create_revert_pr", {"sha": "c9a1f42"})
+        pr1 = github.call("create_revert_pr", {"sha": "c9a1f42"}, principal="executor")
+        pr2 = github.call("create_revert_pr", {"sha": "c9a1f42"}, principal="executor")
         self.assertFalse(pr1.cached)
         self.assertFalse(pr2.cached)
 
@@ -32,11 +32,11 @@ class TestGatewayContract(unittest.TestCase):
         clock = [0.0]
         k8s = FakeKubernetes(clock=lambda: clock[0])
         for _ in range(10):     # rollback_deployment: 10/min
-            k8s.call("rollback_deployment", {"service": "s", "revision": "r"})
+            k8s.call("rollback_deployment", {"service": "s", "revision": "r"}, principal="executor")
         with self.assertRaises(RateLimitExceeded):
-            k8s.call("rollback_deployment", {"service": "s", "revision": "r"})
+            k8s.call("rollback_deployment", {"service": "s", "revision": "r"}, principal="executor")
         clock[0] += 61.0        # window slides -> calls permitted again
-        k8s.call("rollback_deployment", {"service": "s", "revision": "r"})
+        k8s.call("rollback_deployment", {"service": "s", "revision": "r"}, principal="executor")
 
     def test_planted_secret_is_redacted_before_entering_workflow_state(self):
         result = FakeDatadog().call("query_metrics", {"window": "incident"})

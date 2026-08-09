@@ -69,6 +69,20 @@ class PolicyEngine:
             True, False, 0, "R6-read-low",
             f"{action}: {risk.name} operations are always permitted")
 
+    # API role grants (docs/05 §2 RBAC, PROMPT-10 layer 3) — a policy
+    # table, not scattered ifs. Roles: viewer (read-only), operator
+    # (create/run), approver (decide gates), admin (all — the default
+    # token's role, preserving back-compatibility).
+    API_ROLE_GRANTS = {
+        "read": {"viewer", "operator", "approver", "admin"},
+        "create": {"operator", "admin"},
+        "approve": {"approver", "admin"},
+    }
+
+    @classmethod
+    def role_allows(cls, role: str | None, action: str) -> bool:
+        return role in cls.API_ROLE_GRANTS.get(action, set())
+
     def evaluate_change(self, *, band: str, environment: str = "prod",
                         freeze: bool = False) -> dict:
         """Change-admission rules (docs/00 pillar 2). Returned as a dict so
