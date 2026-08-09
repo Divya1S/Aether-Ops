@@ -49,10 +49,27 @@ _TEMPLATES = [
         "one of: deploy-regression/memory, unclassified.\n"
         "Incident: {title}\nEvidence bundle:\n{digest}"),
     PromptTemplate(
-        "plan", "1.0.0",
-        "[plan] Propose remediation as Step Catalog actions only.\n"
-        "Diagnosis: {hypothesis}\nCatalog: {catalog}\n"
-        "Evidence bundle:\n{digest}"),
+        "investigate", "1.0.0",
+        "[investigate] You are gathering evidence for a production "
+        "incident. Choose the SINGLE next action.\n"
+        "Tools:\n{tools}\n"
+        "State: kinds_present={kinds} pending_commit_diffs={pending} "
+        "called={called} step={steps}/{max_steps}\n"
+        "Last observation: {observation}\n"
+        "Incident: {title} service={service}\n"
+        "Reply with ONLY a JSON object: "
+        '{{"action": "<tool or finish>", "args": {{}}, '
+        '"rationale": "<one sentence>"}}'),
+    PromptTemplate(
+        "plan", "2.0.0",
+        "[plan] Propose a remediation plan as JSON using ONLY these "
+        "catalog actions:\n{catalog}\n"
+        "Diagnosis: {hypothesis}\n"
+        "Grounded values: service={service} "
+        "previous_revision={previous_revision} suspect_commit={suspect}\n"
+        "Reply with ONLY a JSON object:\n"
+        '{{"self_estimate": <float 0..1>, "rationale": "<one sentence>", '
+        '"steps": [{{"action": "<catalog action>", "args": {{...}}}}]}}'),
     PromptTemplate(
         "review", "1.0.0",
         "[review] checks_passed={passed}/{total} service={service}"),

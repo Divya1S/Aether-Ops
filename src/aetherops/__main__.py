@@ -128,6 +128,11 @@ def _print_trace(audit) -> None:
     model_calls = [r.payload for r in audit.records if r.action == "model.call"]
     fallbacks = [r.payload for r in audit.records
                  if r.action == "backend.fallback"]
+    decisions = [r.payload for r in audit.records
+                 if r.action == "agent.decision"]
+    for decision in decisions:
+        print(f"  decide step {decision['step']}: "
+              f"{decision['action']:<20} {decision['args']}")
     nodes = [r.payload for r in audit.records if r.action == "node.succeeded"]
 
     _section("Trace (from the audit ledger)")

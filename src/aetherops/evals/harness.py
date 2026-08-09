@@ -80,6 +80,14 @@ def run_scenario(scenario: Scenario) -> dict:
         "verification_passed": verification_passed,
         "tool_calls": sum(1 for record in env["audit"].records
                           if record.action == "tool.call"),
+        "investigation_steps": (ctx.results["knowledge"].output
+                                .get("investigation", {}).get("steps")
+                                if "knowledge" in ctx.results else None),
+        "investigation_termination": (ctx.results["knowledge"].output
+                                      .get("investigation", {})
+                                      .get("termination")
+                                      if "knowledge" in ctx.results
+                                      else None),
         "tokens": env["gateway"].tokens_used,
         "model_latency_ms": round(sum(
             record.payload.get("latency_ms", 0.0)

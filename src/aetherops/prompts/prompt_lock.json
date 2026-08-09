@@ -1,6 +1,7 @@
 {
   "change_risk@1.0.0": "92539331821b10a693ede50644c578f82c10b70d9652f3457d9bcdd42c52c6aa",
-  "plan@1.0.0": "0134a3a547d72aeaea5b85a858efdb056d5f84dc43626abb2be141d4032bbdd7",
+  "investigate@1.0.0": "c2f0aadcaf744dcc32db0ac75044dda224436341d2cf55b1d4a124e2e296607a",
+  "plan@2.0.0": "5f0e130553f9ec3e601a9a30434a4218041f153891ceeb5cde6aaa2210577bdd",
   "postmortem@1.0.0": "b5d8a8d8ea5f3b9a306de2da6d7df24003bebc152fe63555b4dd0f5ce9f5e926",
   "review@1.0.0": "1cf6dc94031e6019caf39d9b4f4ebd8b29f815fe6d2a5957a3643ed5fe3c0ce8",
   "root_cause@1.0.0": "a2aecc96fe9d92b6946f447f6523dbce30faadc3e1def41b4d10ab61f2253c5c",

@@ -6,11 +6,11 @@ chain and the sole backend for tests and eval replays.
 """
 from __future__ import annotations
 
+import json
 import re
 
 _EVIDENCE_LINE = re.compile(r"\[E(\d+)\] \(([\w-]+)")
 _COMMIT_REF = re.compile(r"github://commit/([0-9a-f]{7,40})")
-_COMMIT_MENTION = re.compile(r"commit ([0-9a-f]{7,40})")
 
 
 def respond(prompt: str, task: str) -> str:
@@ -23,14 +23,11 @@ def respond(prompt: str, task: str) -> str:
     if task == "root_cause":
         return _diagnose(prompt)
 
+    if task == "investigate":
+        return _investigate(prompt)
+
     if task == "plan":
-        match = _COMMIT_MENTION.search(prompt)
-        sha = match.group(1) if match else "the suspect commit"
-        return (f"Remediation: (1) rollback_deployment to the previous "
-                "revision — reverses the causal trigger; "
-                f"(2) create_revert_pr for {sha} so the fix-forward path "
-                "is reviewed by the owning team. Both are catalog actions "
-                "with registered compensations.")
+        return _plan(prompt)
 
     if task == "postmortem":
         service = re.search(r"service=(\S+)", prompt)
@@ -72,6 +69,64 @@ def respond(prompt: str, task: str) -> str:
                 "last 10 minutes.")
 
     return "Summary: " + prompt[:200]
+
+
+def _investigate(prompt: str) -> str:
+    """Deterministic next-action policy over the loop's declared state —
+    reproduces the platform's canonical gathering order exactly, so golden
+    scenarios stay byte-stable while live models decide for real."""
+    def bracket(name: str) -> str:
+        match = re.search(name + r"=\[([^\]]*)\]", prompt)
+        return match.group(1) if match else ""
+
+    kinds = bracket("kinds_present")
+    called = bracket("called")
+    pending = re.findall(r"[0-9a-f]{7,40}",
+                         bracket("pending_commit_diffs"))
+
+    def decide(action: str, args: dict, rationale: str) -> str:
+        return json.dumps({"action": action, "args": args,
+                           "rationale": rationale})
+
+    if "metrics" not in kinds:
+        return decide("query_metrics", {},
+                      "correlate the symptom with the timeline")
+    if "deploy" not in kinds:
+        return decide("list_recent_deploys", {},
+                      "check what changed before symptom onset")
+    if pending:
+        return decide("get_commit_diff", {"sha": pending[0]},
+                      "inspect the change the deploy shipped")
+    if "k8s-event" not in kinds:
+        return decide("get_events", {}, "check runtime failure signals")
+    if "get_thread" not in called:
+        return decide("get_thread", {}, "check operator discussion")
+    if "search_runbooks" not in called:
+        return decide("search_runbooks", {},
+                      "pull relevant runbook guidance")
+    return decide("finish", {},
+                  "sufficient evidence: change event correlates with the "
+                  "symptom")
+
+
+def _plan(prompt: str) -> str:
+    """Canonical plan JSON from the grounded values in the prompt."""
+    service = re.search(r"service=(\S+)", prompt)
+    prev = re.search(r"previous_revision=(\S+)", prompt)
+    sha = re.search(r"suspect_commit=([0-9a-f]{7,40})", prompt)
+    steps = []
+    if service and prev:
+        steps.append({"action": "rollback_deployment",
+                      "args": {"service": service.group(1),
+                               "revision": prev.group(1)}})
+    if sha:
+        steps.append({"action": "create_revert_pr",
+                      "args": {"sha": sha.group(1)}})
+    return json.dumps({
+        "self_estimate": 0.9,
+        "rationale": "Reverse the causal trigger, then route the "
+                     "permanent fix through review.",
+        "steps": steps})
 
 
 def _diagnose(prompt: str) -> str:

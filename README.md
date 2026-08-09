@@ -22,7 +22,7 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 108 tests, pure stdlib — no network, no keys
+make test         # 123 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
 make eval         # golden scenarios + retrieval quality, dual release gates
 make demo-live    # same incident, diagnosed by a real local model (free)
@@ -73,5 +73,28 @@ audit ledger (`storage/sqlite.py`). There's also an **MCP server** —
 `python3 -m aetherops.mcp` speaks JSON-RPC over stdio so any MCP client
 (Claude Code included) can search runbooks and pull eval summaries straight
 from the platform.
+
+**A bounded agentic core inside a deterministic control plane:** the model
+makes real decisions in two places, under hard budgets. During
+investigation, it *chooses* the next evidence query from a read-only tool
+menu (or declares "finish" with a reason) — max 8 steps, duplicate calls
+rejected, malformed decisions degrade to the deterministic baseline, every
+decision audited as a replayable trajectory. During planning, the model
+*proposes* the remediation as JSON, and a compile step enforces catalog
+membership, required args, and tool availability — with a deterministic
+fallback plan and the independent Reviewer as the last line. The model's
+self-estimate feeds confidence (validated by the measured calibration
+metric). A test hijacks the loop into demanding a rollback and proves it
+cannot reach a write. Gates, policy, execution, and audit stay
+deterministic — autonomy of investigation and proposal, never of execution.
+
+**Access control runs before the model** (inspired by the ReviewOps Agent
+capstone): evidence classified above the model clearance — Slack discussion
+is CONFIDENTIAL by default — is withheld from every prompt while humans keep
+full visibility in the audit trail and postmortems; write-risk tools are
+callable only by the Control plane's executor principal (a compromised
+agent physically cannot invoke a rollback — audited as `tool.denied`); and
+API tokens carry roles (viewer/operator/approver/admin) checked against a
+policy table, so a viewer can read everything and mutate nothing.
 
 
