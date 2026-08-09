@@ -22,7 +22,7 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 132 tests, pure stdlib — no network, no keys
+make test         # 133 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
 make eval         # golden scenarios (n=4) + retrieval quality, dual gates
 make demo-live    # same incident, diagnosed by a real local model (free)
@@ -72,12 +72,23 @@ per-incident locks plus fencing tokens make double-execution of a
 remediation impossible (proven by a concurrent-approval test). Incidents
 can run asynchronously (`{"async": true}` → 202 + poll).
 
-**Run it as a service:**
+**Run it as a service — with an operator console:**
 
 ```bash
-make serve        # authenticated REST API (stdlib) on :8080
+make serve        # authenticated REST API + web UI (stdlib) on :8080
 make docker       # or: docker compose up — same API, containerized
 ```
+
+Open `http://localhost:8080/` and you get a real **operator console** (one
+self-contained HTML file served by the API — no build step, no npm, no
+external assets): trigger the SEV2 incident, watch the agent pipeline and
+cited evidence render, **approve the rollback at the policy gate**, and read
+the generated postmortem — all driving the live endpoints. The same page
+also scores changes, searches runbooks, and runs the evaluation. The
+[public demo]( https://divya1s.github.io/Aether-Ops/) is that exact console
+in **recorded mode** (a real transcript captured from the API), so it's
+clickable at $0 where no backend runs; served locally it flips to **live
+mode** automatically.
 
 `POST /v1/incidents` starts an incident and runs it to the approval gate;
 `POST /v1/incidents/{id}/approvals {"decision":"approve"}` replays the exact

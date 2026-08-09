@@ -36,6 +36,20 @@ class TestApi(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
 
+    def test_operator_console_served_at_root(self):
+        for path in ("/", "/app", "/index.html"):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}{path}")   # no auth — public UI
+            with urllib.request.urlopen(request, timeout=30) as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertIn("text/html", resp.headers["Content-Type"])
+                html = resp.read().decode()
+            self.assertIn("<title>AetherOps", html)
+            # self-contained: no external asset dependencies (offline/CSP safe)
+            self.assertNotIn("http-equiv=\"refresh\"", html)
+            self.assertNotIn("cdn.", html)
+            self.assertNotIn("<script src=", html)
+
     def test_health_is_open(self):
         status, body = _request(self.port, "/health", token=None)
         self.assertEqual(status, 200)

@@ -70,6 +70,17 @@ class AppState:
         self.locks: dict[str, threading.Lock] = {}
         self.state_lock = threading.Lock()
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        # Change-risk scoring reads organizational memory: seed the canonical
+        # learned episode so risk differentiation (the flywheel) is visible —
+        # the same prior `make demo-change` uses.
+        self.change_memory = EpisodicMemory()
+        self.change_memory.add({
+            "service": "checkout-service",
+            "failure_class": "deploy-regression/memory",
+            "summary": "Deploy raised DB connection pool max_size 20 -> 200; "
+                       "OOMKilled cascade breached p99; rollback verified",
+            "remediation": ["rollback_deployment", "create_revert_pr"],
+            "verified": True})
 
     def lock_for(self, incident_id: str) -> threading.Lock:
         with self.state_lock:
@@ -115,6 +126,25 @@ def _incident_summary(entry: dict) -> dict:
         summary["approval_tier"] = verdict.get("approval_tier")
     if run.error:
         summary["error"] = run.error
+
+    # Rich fields for the operator console (humans keep full visibility —
+    # evidence classification is shown as a badge, not withheld).
+    summary["agents"] = [
+        {"name": name, "confidence": round(result.confidence, 2),
+         "model": result.model_id}
+        for name, result in ctx.results.items()]
+    summary["evidence"] = [
+        {"kind": e.kind, "source": e.citation.source, "ref": e.citation.ref,
+         "summary": e.summary[:140],
+         "classification": e.classification}
+        for e in ctx.evidence]
+    if rca is not None:
+        summary["hypothesis"] = rca.output.get("hypothesis", "")
+    planner = ctx.results.get("planner")
+    if planner is not None:
+        summary["plan"] = [
+            {"action": s["action"], "risk": s["risk"], "args": s["args"]}
+            for s in planner.output.get("steps", [])]
     return summary
 
 
@@ -152,6 +182,19 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _send_ui(self) -> None:
+        """The operator console — a single self-contained page served at the
+        API root, so `make serve` / `docker run` yields a clickable UI that
+        drives the real endpoints (docs/17 Milestone 13)."""
+        path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+        with open(path, "rb") as fh:
+            body = fh.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if not length or length > MAX_BODY_BYTES:
@@ -168,6 +211,8 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ GET
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path in ("/", "/app", "/index.html"):
+            return self._send_ui()
         if parsed.path == "/health":
             return self._send(200, {
                 "status": "ok", "service": "aetherops",
@@ -289,7 +334,7 @@ class Handler(BaseHTTPRequestHandler):
             audit = AuditLog()
             run, ctx = run_change_risk(
                 change, gateway=ModelGateway(audit=audit), audit=audit,
-                memory=EpisodicMemory(), policy=PolicyEngine(),
+                memory=STATE.change_memory, policy=PolicyEngine(),
                 graph=default_graph())
             verdict = run.checkpoint.get("score", {})
             decision = run.checkpoint.get("policy_check", {})
