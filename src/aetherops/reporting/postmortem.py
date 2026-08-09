@@ -22,6 +22,11 @@ FOLLOW_UPS: dict[str, list[str]] = {
         "Alert on pod OOMKilled rate for the affected service",
         "Add a canary stage to the service's deploy pipeline",
     ],
+    "cert-expiry/tls": [
+        "Add certificate-expiry monitoring at 30/14/7 days",
+        "Automate certificate renewal so this incident class is retired",
+        "Audit sibling services for certificates expiring within 30 days",
+    ],
 }
 
 

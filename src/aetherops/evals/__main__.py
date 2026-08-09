@@ -19,11 +19,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="aetherops.evals")
     parser.add_argument("--json", metavar="PATH",
                         help="also write the full report as JSON")
+    parser.add_argument("--live", action="store_true",
+                        help="ALSO run the golden set against the live "
+                             "Ollama backend — reported, never gated")
     args = parser.parse_args()
 
     report = run_all()
 
-    print(f"{RULE}\nAetherOps evaluation — golden scenarios\n{RULE}")
+    print(f"{RULE}\nAetherOps evaluation — golden scenarios "
+          "(n=4, self-authored, offline-deterministic)\n"
+          f"{RULE}")
     for row in report["rows"]:
         verdict = "PASS" if row["correct"] or (
             row["expected_class"] is None and row["outcome_correct"]) else "FAIL"
@@ -60,6 +65,19 @@ def main() -> int:
               f"P@5={metrics['precision_at_5']:.3f}  "
               f"R@5={metrics['recall_at_5']:.3f}  "
               f"MRR={metrics['mrr']:.3f}{marker}")
+
+    if args.live:
+        print(f"\n{RULE}\nLive-model track (ollama backend; reported, "
+              f"never gated; n=4)\n{RULE}")
+        live = run_all(backends_spec="ollama,offline")
+        for row in live["rows"]:
+            print(f"    {row['scenario']:<22} outcome={row['outcome']:<11} "
+                  f"class={row['predicted_class']} steps={row['steps']} "
+                  f"inv_steps={row['investigation_steps']} "
+                  f"latency={row['model_latency_ms']:.0f}ms")
+        print(f"    live rca_precision_at_1="
+              f"{live['aggregates']['rca_precision_at_1']} "
+              f"(offline gate remains the release criterion)")
 
     gate = report["release_gate"]
     retrieval_gate = retrieval["gate"]

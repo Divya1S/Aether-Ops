@@ -123,7 +123,7 @@ def handle(message: dict) -> dict | None:
 def main() -> int:
     for line in sys.stdin:
         line = line.strip()
-        if not line:
+        if not line or len(line) > 1_000_000:   # cap frame size
             continue
         try:
             message = json.loads(line)

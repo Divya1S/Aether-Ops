@@ -30,6 +30,9 @@ STEP_CATALOG: dict[str, dict] = {
                      "risk": "LOW", "compensable": False},
     "scale_deployment": {"system": "kubernetes", "tool": "scale_deployment",
                          "risk": "MEDIUM", "compensable": True},
+    "rotate_certificate": {"system": "kubernetes",
+                           "tool": "rotate_certificate",
+                           "risk": "MEDIUM", "compensable": True},
 }
 
 REQUIRED_ARGS: dict[str, tuple] = {
@@ -37,6 +40,7 @@ REQUIRED_ARGS: dict[str, tuple] = {
     "create_revert_pr": ("sha",),
     "restart_pods": ("service",),
     "scale_deployment": ("service",),
+    "rotate_certificate": ("service",),
 }
 
 PLAN_SCHEMA = {
@@ -182,9 +186,16 @@ class PlannerAgent(Agent):
 
     @staticmethod
     def _fallback_plan(rca, service, previous_revision) -> list:
-        if not rca.output["failure_class"].startswith("deploy-regression"):
+        failure_class = rca.output["failure_class"]
+        if failure_class == "cert-expiry/tls":
+            entry = STEP_CATALOG["rotate_certificate"]
+            return [{"action": "rotate_certificate",
+                     "system": entry["system"], "tool": entry["tool"],
+                     "args": {"service": service}, "risk": entry["risk"],
+                     "compensable": entry["compensable"]}]
+        if not failure_class.startswith("deploy-regression"):
             raise PermanentError(
-                f"no cataloged remediation for {rca.output['failure_class']} "
+                f"no cataloged remediation for {failure_class} "
                 "— escalate with diagnosis")
         entry_rb = STEP_CATALOG["rollback_deployment"]
         entry_pr = STEP_CATALOG["create_revert_pr"]

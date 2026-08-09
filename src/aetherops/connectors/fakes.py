@@ -197,6 +197,11 @@ class FakeKubernetes(SnapshotConnector):
                                         "Roll a deployment back to a revision",
                                         risk=RiskLevel.HIGH, cacheable=False,
                                         rate_per_min=10),
+        "rotate_certificate": ToolSpec("rotate_certificate",
+                                       "Renew and rotate a service's TLS "
+                                       "certificate",
+                                       risk=RiskLevel.MEDIUM, cacheable=False,
+                                       rate_per_min=10),
     }
 
     def _invoke(self, tool: str, args: dict) -> ToolResult:
@@ -205,12 +210,29 @@ class FakeKubernetes(SnapshotConnector):
             events = [{"reason": reason, "pod": pod, "ts": ts}
                       for reason, pod, ts in snap.oom_events]
             data = {"events": events, "oomkilled_count": snap.oom_count}
-            excerpt = (f"{snap.oom_count} OOMKilled events across {snap.service} "
-                       "pods, pods in CrashLoopBackOff"
-                       if snap.oom_count
-                       else f"no abnormal pod events for {snap.service} in window")
+            if snap.oom_count and events:
+                reason = events[0]["reason"]
+                excerpt = (f"{snap.oom_count} {reason} events across "
+                           f"{snap.service} pods"
+                           + (", pods in CrashLoopBackOff"
+                              if reason == "OOMKilled" else ""))
+            else:
+                excerpt = (f"no abnormal pod events for {snap.service} "
+                           "in window")
             return ToolResult(data, self.cite(
                 f"k8s://prod/{snap.service}/events", excerpt))
+        if tool == "rotate_certificate":
+            service = args.get("service", snap.service)
+            data = {
+                "service": service,
+                "rotated": True,
+                "dry_run": args.get("dry_run", True),
+                "undo": {"system": "kubernetes", "tool": "rotate_certificate",
+                         "args": {"service": service, "restore": "previous"}},
+            }
+            return ToolResult(data, self.cite(
+                f"k8s://prod/{service}/tls",
+                f"certificate for {service} renewed and rotated (dry-run)"))
         if tool == "rollback_deployment":
             service = args.get("service", snap.service)
             revision = args.get("revision", snap.previous_revision)

@@ -17,10 +17,18 @@ without it (docs/17 acceptance #14).
 """
 from __future__ import annotations
 
+import concurrent.futures
+import hmac
 import json
 import os
+import threading
+import uuid
+from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+MAX_BODY_BYTES = 64 * 1024          # request bodies are small JSON by design
+MAX_INCIDENTS_RETAINED = 200        # oldest resolved entries evicted first
 
 from aetherops import __version__
 from aetherops.core.types import ChangeEvent, WorkflowStatus, new_id
@@ -53,9 +61,31 @@ def _tokens() -> dict[str, str]:
 
 class AppState:
     def __init__(self):
-        self.incidents: dict[str, dict] = {}
+        self.incidents: OrderedDict[str, dict] = OrderedDict()
         self.rag = RagStore()
         self.tokens = _tokens()
+        # Per-incident locks: approval is check-then-act and MUST be atomic
+        # (two racing approvals would double-execute the remediation — the
+        # exact failure class the platform exists to prevent).
+        self.locks: dict[str, threading.Lock] = {}
+        self.state_lock = threading.Lock()
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+    def lock_for(self, incident_id: str) -> threading.Lock:
+        with self.state_lock:
+            return self.locks.setdefault(incident_id, threading.Lock())
+
+    def evict(self) -> None:
+        with self.state_lock:
+            while len(self.incidents) > MAX_INCIDENTS_RETAINED:
+                for key, entry in self.incidents.items():
+                    if entry["run"].status.value != "PAUSED":
+                        self.incidents.pop(key)
+                        self.locks.pop(key, None)
+                        break
+                else:                    # everything paused: evict oldest
+                    key, _ = self.incidents.popitem(last=False)
+                    self.locks.pop(key, None)
 
 
 STATE = AppState()
@@ -104,7 +134,11 @@ class Handler(BaseHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
             return None
-        return STATE.tokens.get(header[len("Bearer "):])
+        presented = header[len("Bearer "):]
+        for token, role in STATE.tokens.items():   # timing-safe comparison
+            if hmac.compare_digest(presented, token):
+                return role
+        return None
 
     def _require(self, action: str) -> bool:
         """Access control before anything runs: 401 unknown token, 403
@@ -120,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)
-        if not length:
+        if not length or length > MAX_BODY_BYTES:
             return {}
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))
@@ -160,7 +194,12 @@ class Handler(BaseHTTPRequestHandler):
             entry = STATE.incidents.get(incident_id)
             if entry is None:
                 return self._send(404, {"error": "unknown incident"})
-            return self._send(200, _incident_summary(entry))
+            if entry["run"] is None:            # async run still executing
+                return self._send(200, {"incident_id": incident_id,
+                                        "status": "RUNNING",
+                                        "fence": entry["fence"]})
+            return self._send(200, {**_incident_summary(entry),
+                                    "fence": entry["fence"]})
         self._send(404, {"error": "unknown route"})
 
     # ----------------------------------------------------------------- POST
@@ -170,12 +209,28 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/v1/incidents":
             if not self._require("create"):
                 return
+            body = self._body()
             incident, env = build_demo_environment()
-            run, ctx = run_incident_remediation(incident, **env)
-            STATE.incidents[incident.id] = {
-                "incident": incident, "env": env, "run": run, "ctx": ctx}
-            return self._send(201,
-                              _incident_summary(STATE.incidents[incident.id]))
+            entry = {"incident": incident, "env": env, "run": None,
+                     "ctx": None, "fence": uuid.uuid4().hex,
+                     "phase": "RUNNING"}
+            STATE.incidents[incident.id] = entry
+            STATE.evict()
+
+            def _execute():
+                run, ctx = run_incident_remediation(incident, **env)
+                with STATE.lock_for(incident.id):
+                    entry["run"], entry["ctx"] = run, ctx
+                    entry["phase"] = "READY"
+
+            if body.get("async"):
+                STATE.pool.submit(_execute)     # 202 now, poll via GET
+                return self._send(202, {"incident_id": incident.id,
+                                        "status": "RUNNING",
+                                        "fence": entry["fence"]})
+            _execute()
+            return self._send(201, {**_incident_summary(entry),
+                                    "fence": entry["fence"]})
 
         if (parsed.path.startswith("/v1/incidents/")
                 and parsed.path.endswith("/approvals")):
@@ -185,18 +240,32 @@ class Handler(BaseHTTPRequestHandler):
             entry = STATE.incidents.get(incident_id)
             if entry is None:
                 return self._send(404, {"error": "unknown incident"})
-            if entry["run"].status != WorkflowStatus.PAUSED:
-                return self._send(409, {"error": "incident is not awaiting "
-                                                 "approval"})
-            decision = self._body().get("decision")
+            body = self._body()
+            decision = body.get("decision")
             if decision not in ("approve", "deny"):
                 return self._send(400, {"error": "decision must be "
                                                  "'approve' or 'deny'"})
-            run, ctx = run_incident_remediation(
-                entry["incident"], **entry["env"], ctx=entry["ctx"],
-                approvals={entry["run"].pending_gate: decision == "approve"},
-                checkpoint=entry["run"].checkpoint)
-            entry["run"], entry["ctx"] = run, ctx
+            # Atomic check-then-act: without the lock, two racing approvals
+            # both observe PAUSED and the remediation executes twice. The
+            # optional fence token (docs/12) rejects decisions made against
+            # a stale view of the incident.
+            with STATE.lock_for(incident_id):
+                if (body.get("fence") is not None
+                        and body["fence"] != entry["fence"]):
+                    return self._send(409, {"error": "stale fence token"})
+                run = entry["run"]
+                if run is None:
+                    return self._send(409, {"error": "incident still "
+                                                     "running"})
+                if run.status != WorkflowStatus.PAUSED:
+                    return self._send(409, {"error": "incident is not "
+                                                     "awaiting approval"})
+                run, ctx = run_incident_remediation(
+                    entry["incident"], **entry["env"], ctx=entry["ctx"],
+                    approvals={run.pending_gate: decision == "approve"},
+                    checkpoint=run.checkpoint)
+                entry["run"], entry["ctx"] = run, ctx
+                entry["fence"] = uuid.uuid4().hex
             response = _incident_summary(entry)
             postmortem = run.checkpoint.get("postmortem")
             if postmortem:

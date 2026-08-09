@@ -113,8 +113,35 @@ def payments_regression() -> Scenario:
             expected_steps=("rollback_deployment", "create_revert_pr")))
 
 
+def cert_expiry() -> Scenario:
+    """Scenario 4 — a second diagnosable failure class: TLS certificate
+    expiry. No change event exists; diagnosis grounds on symptom markers
+    (error spikes + TLSHandshakeError events) corroborated by runbook
+    guidance, and the plan is a certificate rotation, not a rollback."""
+    return Scenario(
+        id="s4-cert-expiry",
+        name="payments-gateway TLS certificate expiry",
+        snapshot=Snapshot(
+            service="payments-gateway",
+            alert_id="P-9433",
+            alert_title="payments-gateway TLS handshake failures spiking",
+            triggered_at="2026-08-05T09:04:00Z",
+            p99_incident=(("09:00Z", 142), ("09:05Z", 168), ("09:10Z", 171)),
+            p99_post=(("09:40Z", 139), ("09:45Z", 131)),
+            has_deploy=False,
+            oom_events=(("TLSHandshakeError", "gateway-2c41-1", "09:02Z"),
+                        ("TLSHandshakeError", "gateway-2c41-3", "09:03Z")),
+            oom_count=34),
+        truth=GroundTruth(
+            outcome="remediated",
+            failure_class="cert-expiry/tls",
+            suspect_commit=None,
+            expected_steps=("rotate_certificate",)))
+
+
 def all_scenarios() -> list[Scenario]:
-    return [canonical(), uncorrelated_latency(), payments_regression()]
+    return [canonical(), uncorrelated_latency(), payments_regression(),
+            cert_expiry()]
 
 
 def build_environment(scenario: Scenario, audit_path: str | None = None,

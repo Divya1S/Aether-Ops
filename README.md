@@ -22,9 +22,9 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 123 tests, pure stdlib — no network, no keys
+make test         # 132 tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
-make eval         # golden scenarios + retrieval quality, dual release gates
+make eval         # golden scenarios (n=4) + retrieval quality, dual gates
 make demo-live    # same incident, diagnosed by a real local model (free)
 ```
 
@@ -41,8 +41,15 @@ backend, so golden-scenario replay never depends on what's installed.
 postmortem guidance through a hybrid (keyword + vector) retriever with
 `rag://doc#offset` source attribution; chunking strategy and embedder are
 configuration (fixed vs. paragraph, stdlib TF-IDF vs. Ollama embeddings);
-and `make eval` scores retrieval against a hand-labeled query set —
-precision@1/precision@5/recall@5/MRR per chunking strategy, gated in CI.
+and `make eval` scores retrieval against a hand-labeled query set (n=22,
+self-labeled) — precision@1/precision@5/recall@5/MRR per chunking strategy,
+gated in CI. Golden-scenario metrics are honest about their scale: n=4
+self-authored scenarios spanning two diagnosable failure classes
+(deploy regression, certificate expiry) plus a must-escalate case — they
+gate the *pipeline* deterministically; `make eval --live` additionally
+reports (never gates) real-model behavior on the same set. The trust
+ladder demands sample size, not just precision: a correct-but-single-
+episode class stays advisory-only.
 Each resolved incident's postmortem is ingested back into the store, so
 incident N's writeup is retrievable context for incident N+1.
 
@@ -55,6 +62,15 @@ is recorded in the audit ledger and listed in the generated postmortem. The
 security controls are mapped to the OWASP LLM Top 10 (2025) in
 [docs/05 §11](docs/05-security.md), with the LLM01/LLM06 attack tests in
 the suite.
+
+**Reliability is mechanism, not intention:** every workflow node carries a
+wall-clock budget (a timed-out attempt is a retryable failure, audited
+`node.timeout`) with an optional workflow-level deadline that escalates
+with partial findings; semantic retries roll back the failed attempt's
+side effects before re-running; and the API's approval endpoint is atomic —
+per-incident locks plus fencing tokens make double-execution of a
+remediation impossible (proven by a concurrent-approval test). Incidents
+can run asynchronously (`{"async": true}` → 202 + poll).
 
 **Run it as a service:**
 

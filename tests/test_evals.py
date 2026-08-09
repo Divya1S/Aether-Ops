@@ -37,7 +37,7 @@ class TestHarnessReport(unittest.TestCase):
 
     def test_aggregate_metrics(self):
         aggregates = self.report["aggregates"]
-        self.assertEqual(aggregates["scenarios"], 3)
+        self.assertEqual(aggregates["scenarios"], 4)
         self.assertEqual(aggregates["rca_precision_at_1"], 1.0)
         self.assertEqual(aggregates["escalation_correctness"], 1.0)
         self.assertEqual(aggregates["plan_step_accuracy"], 1.0)
@@ -52,6 +52,19 @@ class TestHarnessReport(unittest.TestCase):
         self.assertEqual(verdict["episodes"], 2)
         self.assertEqual(verdict["precision"], 1.0)
         self.assertTrue(verdict["stage"].startswith("gated-writes"))
+        # A correct-but-single-episode class stays advisory — the ladder
+        # demands sample size, not just precision.
+        self.assertEqual(ladder["cert-expiry/tls"]["episodes"], 1)
+        self.assertEqual(ladder["cert-expiry/tls"]["stage"], "advisory-only")
+
+    def test_cert_expiry_class_end_to_end(self):
+        row = next(r for r in self.report["rows"]
+                   if r["scenario"] == "s4-cert-expiry")
+        self.assertEqual(row["outcome"], "remediated")
+        self.assertEqual(row["predicted_class"], "cert-expiry/tls")
+        self.assertIsNone(row["predicted_commit"])   # nothing to revert
+        self.assertEqual(row["steps"], ["rotate_certificate"])
+        self.assertTrue(row["audit_verified"])
 
     def test_release_gate_passes_phase1_criterion(self):
         self.assertGreaterEqual(RCA_PRECISION_GATE, 0.6)

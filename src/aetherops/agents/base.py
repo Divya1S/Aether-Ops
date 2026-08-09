@@ -59,7 +59,6 @@ class Agent(abc.ABC):
 
     name: str = "agent"
     tier: str = "standard"   # model gateway tier hint: fast|standard|reasoning|frontier
-    retry: RetryPolicy = RetryPolicy()
     # JSON-Schema-subset contract for `AgentResult.output` (core/schema.py).
     # Enforced by the workflow's agent-node wrapper: one semantic retry on
     # violation, then escalation (docs/02 §2, §4).

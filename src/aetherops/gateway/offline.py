@@ -34,6 +34,14 @@ def respond(prompt: str, task: str) -> str:
         cls = re.search(r"failure_class=(\S+)", prompt)
         sha = re.search(r"suspect=([0-9a-f]{7,40})", prompt)
         p99 = re.search(r"recovered_p99=(\d+)", prompt)
+        if "cert-expiry" in prompt:
+            return (f"On {service.group(1) if service else 'the service'}, "
+                    "an expired TLS certificate caused client handshake "
+                    "failures. The platform correlated error spikes with "
+                    "TLSHandshakeError pod events and the absence of any "
+                    "deploy, renewed and rotated the certificate under "
+                    "approval, and verified recovery at p99 "
+                    f"{p99.group(1) if p99 else '?'}ms.")
         return (f"On {service.group(1) if service else 'the service'}, a "
                 f"deploy-introduced change "
                 f"({sha.group(1) if sha else 'unidentified'}) matching "
@@ -114,6 +122,13 @@ def _plan(prompt: str) -> str:
     service = re.search(r"service=(\S+)", prompt)
     prev = re.search(r"previous_revision=(\S+)", prompt)
     sha = re.search(r"suspect_commit=([0-9a-f]{7,40})", prompt)
+    if "cert-expiry" in prompt and service:
+        return json.dumps({
+            "self_estimate": 0.9,
+            "rationale": "Renew and rotate the expired certificate; no "
+                         "code change to revert.",
+            "steps": [{"action": "rotate_certificate",
+                       "args": {"service": service.group(1)}}]})
     steps = []
     if service and prev:
         steps.append({"action": "rollback_deployment",
@@ -138,6 +153,24 @@ def _diagnose(prompt: str) -> str:
     has_oom = "OOMKilled" in prompt
     has_pool_change = "pool" in prompt.lower()
     required = {"metrics", "deploy", "commit", "k8s-event"}
+
+    # Certificate-expiry class: TLS handshake failures with no correlated
+    # change event, corroborated by runbook guidance markers.
+    if ("TLSHandshakeError" in prompt and not sha_match
+            and "certificate" in prompt.lower()
+            and {"metrics", "k8s-event"} <= kinds.keys()):
+        deploy_note = (f" No deployment correlates with onset "
+                       f"[E{kinds['deploy']}]." if "deploy" in kinds else "")
+        runbook_note = (f" Runbook guidance matches the signature "
+                        f"[E{kinds['runbook']}]." if "runbook" in kinds
+                        else "")
+        return (
+            f"Hypothesis (primary): the service's TLS certificate expired. "
+            f"Clients fail the handshake, producing error spikes "
+            f"[E{kinds['metrics']}] and TLSHandshakeError pod events "
+            f"[E{kinds['k8s-event']}].{deploy_note}{runbook_note} "
+            "Remediate by renewing and rotating the certificate. "
+            "Recommended class: cert-expiry/tls.")
 
     if not (sha_match and has_oom and has_pool_change
             and required <= kinds.keys()):

@@ -20,6 +20,7 @@ LLMs appear nowhere in this file. That is the point.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -46,6 +47,11 @@ class Node:
     retry: RetryPolicy = field(default_factory=RetryPolicy)
     compensate: Optional[Callable] = None   # fn(ctx, node_output) -> None
     gate: Optional[GateSpec] = None
+    # Per-attempt wall-clock budget (docs/11 §2). None = unbounded. A timed-
+    # out attempt is a TransientError (retried, then failed) — the worker
+    # thread is abandoned, the accepted in-process trade-off vs. Temporal's
+    # real cancellation; the audit trail records node.timeout either way.
+    timeout_s: Optional[float] = None
 
 
 @dataclass
@@ -60,7 +66,8 @@ class DagRun:
 
 class DagExecutor:
     def __init__(self, nodes: list[Node], audit=None,
-                 sleeper: Callable[[float], None] = time.sleep):
+                 sleeper: Callable[[float], None] = time.sleep,
+                 deadline_s: Optional[float] = None):
         self._by_name = {}
         for node in nodes:
             if node.name in self._by_name:
@@ -69,6 +76,10 @@ class DagExecutor:
         self._order = self._topo_sort(nodes)
         self._audit = audit
         self._sleep = sleeper
+        # Workflow-level wall-clock budget (docs/11 §2): checked between
+        # nodes; an exceeded deadline hands the run to a human with partial
+        # findings instead of hanging silently.
+        self._deadline_s = deadline_s
 
     def _topo_sort(self, nodes: list[Node]) -> list[Node]:
         for node in nodes:
@@ -98,10 +109,20 @@ class DagExecutor:
         approvals = approvals or {}
         cp = dict(checkpoint or {})
         completed = [n.name for n in self._order if n.name in cp]
+        run_started = time.monotonic()
 
         for node in self._order:
             if node.name in cp:
                 continue
+
+            if (self._deadline_s is not None
+                    and time.monotonic() - run_started > self._deadline_s):
+                self._log("workflow.deadline", node.name,
+                          {"deadline_s": self._deadline_s})
+                return DagRun(WorkflowStatus.FAILED, cp, completed,
+                              error=f"workflow deadline exceeded before "
+                                    f"{node.name!r} — escalate with partial "
+                                    "findings")
 
             if node.gate is not None and node.gate.needed(cp):
                 decision = approvals.get(node.name)
@@ -136,13 +157,32 @@ class DagExecutor:
 
         return DagRun(WorkflowStatus.SUCCEEDED, cp, completed)
 
+    def _run_node(self, node: Node, ctx) -> dict:
+        """One attempt, honoring the node's wall-clock budget."""
+        if node.timeout_s is None:
+            return node.run(ctx) or {}
+        # No context manager: shutdown must not wait for an abandoned task,
+        # or the timeout would be decorative.
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(node.run, ctx)
+        try:
+            output = future.result(timeout=node.timeout_s) or {}
+        except concurrent.futures.TimeoutError:
+            pool.shutdown(wait=False, cancel_futures=True)
+            self._log("node.timeout", node.name,
+                      {"timeout_s": node.timeout_s})
+            raise TransientError(
+                f"attempt exceeded {node.timeout_s}s budget") from None
+        pool.shutdown(wait=False)
+        return output
+
     def _run_with_retry(self, node: Node, ctx) -> dict:
         attempt = 0
         while True:
             attempt += 1
             started = time.monotonic()
             try:
-                output = node.run(ctx) or {}
+                output = self._run_node(node, ctx)
                 self._log("node.succeeded", node.name,
                           {"attempt": attempt,
                            "duration_ms": round((time.monotonic() - started)

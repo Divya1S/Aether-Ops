@@ -36,6 +36,10 @@ def _agent_node(agent):
         attempts = 0
         while True:
             attempts += 1
+            # Agents mutate shared context (evidence, params); a semantic
+            # retry must not accumulate the failed attempt's side effects.
+            evidence_mark = len(ctx.evidence)
+            params_snapshot = dict(ctx.params)
             result = agent.run(ctx)
             if not result.citations:
                 raise PermanentError(
@@ -49,6 +53,9 @@ def _agent_node(agent):
                 raise PermanentError(
                     f"{agent.name}: output failed schema validation after "
                     f"semantic retry — escalate ({errors[:3]})")
+            del ctx.evidence[evidence_mark:]
+            ctx.params.clear()
+            ctx.params.update(params_snapshot)
         ctx.record(result)
         return result.to_checkpoint()
     return run
@@ -122,13 +129,15 @@ def build_workflow() -> list[Node]:
     return [
         Node("triage", _agent_node(TriageAgent())),
         Node("gather_evidence", _agent_node(KnowledgeAgent()),
-             deps=("triage",)),
+             deps=("triage",), timeout_s=600),
         Node("security_screen", _agent_node(SecurityAgent()),
-             deps=("gather_evidence",)),
+             deps=("gather_evidence",), timeout_s=60),
         Node("diagnose", _agent_node(RootCauseAgent()),
-             deps=("security_screen",)),
-        Node("plan", _agent_node(PlannerAgent()), deps=("diagnose",)),
-        Node("review", _agent_node(ReviewerAgent()), deps=("plan",)),
+             deps=("security_screen",), timeout_s=300),
+        Node("plan", _agent_node(PlannerAgent()), deps=("diagnose",),
+             timeout_s=300),
+        Node("review", _agent_node(ReviewerAgent()), deps=("plan",),
+             timeout_s=120),
         Node("policy_check", _policy_check, deps=("review",)),
         Node("approval_gate", run=None, deps=("policy_check",),
              gate=GateSpec(
@@ -157,6 +166,10 @@ def run_incident_remediation(incident, *, connectors, gateway, audit, memory,
         ctx = WorkflowContext(incident=incident, connectors=connectors,
                               gateway=gateway, audit=audit, memory=memory,
                               policy=policy, rag=rag)
+        if audit is not None:       # trace boundary: one trace per workflow
+            audit.append(actor="control-plane", action="workflow.start",
+                         payload={"workflow": "incident_remediation",
+                                  "trace": incident.id})
     executor = DagExecutor(build_workflow(), audit=audit,
                            sleeper=lambda seconds: None)
     run = executor.execute(ctx, approvals=approvals, checkpoint=checkpoint)

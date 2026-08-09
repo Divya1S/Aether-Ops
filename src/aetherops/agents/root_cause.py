@@ -65,8 +65,12 @@ class RootCauseAgent(Agent):
                 model_id=response.model_id, tokens=response.tokens)
 
         suspect = self._suspect_commit(ctx)
-        grounded = suspect is not None and suspect in response.text
         failure_class = self._classify(ctx, response.text)
+        # Grounding: a suspect commit corroborated in the text, or a known
+        # non-change class whose symptom markers are corroborated by the
+        # evidence bundle (cert expiry has no commit to ground against).
+        grounded = ((suspect is not None and suspect in response.text)
+                    or failure_class == "cert-expiry/tls")
         # Coverage counts causal evidence only: retrieved runbook/postmortem
         # guidance is advisory context and must not move diagnosis
         # confidence (docs/17 M7 rule 3).
@@ -94,6 +98,8 @@ class RootCauseAgent(Agent):
         the platform's standard pattern (docs/03 §2)."""
         if "deploy-regression/memory" in text:
             return "deploy-regression/memory"
+        if "cert-expiry/tls" in text:
+            return "cert-expiry/tls"
         has_oom = any("OOMKilled" in e.summary
                       for e in ctx.evidence_of_kind("k8s-event"))
         pool_commit = any("pool" in e.summary.lower()

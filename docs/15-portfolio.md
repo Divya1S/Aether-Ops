@@ -101,7 +101,7 @@ implementation of" — no claim of production deployment anywhere.
     ~$2,100 manual; ~45–60k engineer-hours/month returned at maturity)
     and designed cell-based multi-region deployment with data-residency
     pinning — then made cost a measured number via per-call metering.
-13. Built the reference implementation pure-stdlib by design: 108 tests
+13. Built the reference implementation pure-stdlib by design: 132 tests
     and dual evaluation gates run in CI on Python 3.11–3.13 with no
     dependencies, no network, and no API keys.
 

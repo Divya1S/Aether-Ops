@@ -17,10 +17,13 @@ from aetherops.workflows.incident_remediation import run_incident_remediation
 RCA_PRECISION_GATE = 0.60
 
 
-def run_scenario(scenario: Scenario) -> dict:
-    # Always offline: golden-scenario replay is deterministic by contract
-    # (docs/10) and must not vary with what's installed on the machine.
-    incident, env = build_environment(scenario, backends_spec="offline")
+def run_scenario(scenario: Scenario,
+                 backends_spec: str = "offline") -> dict:
+    # Offline by default: golden-scenario replay is deterministic by
+    # contract (docs/10) and must not vary with what's installed. The
+    # opt-in live track (evals CLI --live) passes "ollama,offline" to
+    # measure real-model behavior — reported, never gated.
+    incident, env = build_environment(scenario, backends_spec=backends_spec)
     run, ctx = run_incident_remediation(incident, **env)
     if run.status == WorkflowStatus.PAUSED:
         run, ctx = run_incident_remediation(
@@ -126,8 +129,10 @@ def trust_ladder(rows: list[dict]) -> dict:
     return ladder
 
 
-def run_all(scenarios: list[Scenario] | None = None) -> dict:
-    rows = [run_scenario(s) for s in (scenarios or all_scenarios())]
+def run_all(scenarios: list[Scenario] | None = None,
+            backends_spec: str = "offline") -> dict:
+    rows = [run_scenario(s, backends_spec=backends_spec)
+            for s in (scenarios or all_scenarios())]
 
     diagnosable = [r for r in rows if r["expected_class"] is not None]
     escalations = [r for r in rows if r["expected_class"] is None]
