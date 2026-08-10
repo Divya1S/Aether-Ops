@@ -19,7 +19,12 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.10"]
 llm = ["anthropic>=0.40"]          # production ModelGateway backend
-api = ["fastapi>=0.110", "uvicorn>=0.29"]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]           # FastAPI surface
+langgraph = ["langgraph>=0.2"]                      # LangGraph orchestration
+vectorstores = ["chromadb>=0.5"]                    # real vector store for RAG
+ragas = ["ragas>=0.2", "datasets>=2.0"]             # RAG evaluation
+finetune = ["peft>=0.11", "transformers>=4.40", "trl>=0.9", "torch>=2.0",
+            "datasets>=2.0"]                        # LoRA/SFT fine-tuning
 
 [tool.setuptools.packages.find]
 where = ["src"]
