@@ -2,7 +2,7 @@
 
 PY := PYTHONPATH=src python3
 
-.PHONY: demo demo-pause demo-deny demo-change demo-live serve docker test eval eval-live help
+.PHONY: demo demo-pause demo-deny demo-change demo-live serve docker test eval eval-live judge-live help
 
 help:
 	@echo "make demo         run the SEV2 vertical slice with auto-approval"
@@ -13,6 +13,7 @@ help:
 	@echo "make test         run the full unittest suite"
 	@echo "make eval         run the golden-scenario evaluation (release gate)"
 	@echo "make eval-live    + live-model and semantic-retrieval tracks (free, local Ollama)"
+	@echo "make judge-live   LLM-as-judge on a real local model + the deterministic anchor"
 
 demo:
 	$(PY) -m aetherops --approve
@@ -44,3 +45,6 @@ eval:
 
 eval-live:
 	$(PY) -m aetherops.evals --live
+
+judge-live:
+	$(PY) -m aetherops.evals.judge_live

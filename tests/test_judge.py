@@ -88,6 +88,24 @@ class TestAggregateAndGate(unittest.TestCase):
         self.assertTrue(aggregate([])["faithful_all"])
 
 
+class TestLiveJudgePath(unittest.TestCase):
+    """Phase N: the real live-judge gateway path (ollama -> offline fallback).
+    The MODEL's quality scores vary; the ANCHOR verdict is deterministic and
+    authoritative — that is what we assert, so it holds with or without
+    Ollama (in CI the ollama attempt is refused and it falls to offline)."""
+
+    def test_live_gateway_anchor_overrides_the_model(self):
+        from aetherops.gateway.backends import build_backend_chain
+        gateway = ModelGateway(backends=build_backend_chain("ollama,offline"))
+        digest = "\n".join(f"[E{i}] (kind) evidence" for i in range(1, 6))
+        verdict = judge_hypothesis(
+            gateway, "Chain [E3] -> [E4]. Also [E42] and [E99].", 5, digest)
+        self.assertFalse(verdict["faithful"])
+        self.assertEqual(sorted(verdict["hallucinated_refs"]),
+                         ["E42", "E99"])
+        self.assertEqual(verdict["scores"]["citation_faithfulness"], 1)
+
+
 class TestHarnessIntegration(unittest.TestCase):
     def test_judge_runs_and_gates_in_the_report(self):
         report = run_all()

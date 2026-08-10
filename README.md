@@ -77,7 +77,11 @@ computes ground truth (which `[En]` references actually exist) and
 *overrides* the judge on faithfulness, flagging disagreement. The
 deterministic anchor gates CI (zero hallucinated citations); the judge's
 quality scores are reported. Offline the judge is a reproducible policy;
-`make eval --live` runs a real-model judge over the same set.
+`make eval --live` runs a real-model judge over the same set, and
+**`make judge-live`** shows it directly: a local model grades a faithful and
+a fabricated-citation hypothesis, and the deterministic anchor overrides it —
+small local models routinely miss the fake `[E42]`/`[E99]` references the
+anchor catches.
 Each resolved incident's postmortem is ingested back into the store, so
 incident N's writeup is retrievable context for incident N+1.
 
