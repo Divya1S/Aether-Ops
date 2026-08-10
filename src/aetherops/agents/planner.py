@@ -35,6 +35,11 @@ STEP_CATALOG: dict[str, dict] = {
                            "risk": "MEDIUM", "compensable": True},
 }
 
+MAX_PLAN_STEPS = 6      # a real remediation is a handful of actions; more is
+                        # a hallucinating/adversarial proposal (audit M: write
+                        # amplification). The schema subset can't express
+                        # maxItems, so the cap is enforced here.
+
 REQUIRED_ARGS: dict[str, tuple] = {
     "rollback_deployment": ("service", "revision"),
     "create_revert_pr": ("sha",),
@@ -157,7 +162,10 @@ class PlannerAgent(Agent):
             return None, "; ".join(errors[:2])
         if not proposal["steps"]:
             return None, "plan must contain at least one step"
-        compiled = []
+        if len(proposal["steps"]) > MAX_PLAN_STEPS:
+            return None, (f"plan has {len(proposal['steps'])} steps; the "
+                          f"maximum is {MAX_PLAN_STEPS}")
+        compiled, seen = [], set()
         for step in proposal["steps"]:
             action = step["action"]
             entry = STEP_CATALOG.get(action)
@@ -167,6 +175,11 @@ class PlannerAgent(Agent):
                        if k not in step["args"]]
             if missing:
                 return None, f"{action}: missing args {missing}"
+            key = (action, tuple(sorted(
+                (k, str(v)) for k, v in step["args"].items())))
+            if key in seen:                # no repeated identical writes
+                return None, f"duplicate step {action!r}"
+            seen.add(key)
             try:                       # compile-time availability check
                 connector = ctx.connectors.get(entry["system"])
             except KeyError:

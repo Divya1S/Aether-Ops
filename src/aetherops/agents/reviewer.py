@@ -98,9 +98,6 @@ class ReviewerAgent(Agent):
                   and rollback["args"].get("revision") == previous_revision,
                   f"rollback target must equal the actual previous revision "
                   f"({previous_revision})")
-            check("service-scope",
-                  rollback["args"].get("service") == service,
-                  "steps must be scoped to the incident's service")
 
             # Temporal precedence: the deploy being reverted must PRE-date
             # symptom onset, or it cannot be the cause (audit C4/H5 — the one
@@ -139,6 +136,17 @@ class ReviewerAgent(Agent):
             check("revert-sha-grounded",
                   revert["args"].get("sha") == rca.output.get("suspect_commit"),
                   "revert PR must target the diagnosed suspect commit")
+
+        # Scope EVERY step to the incident's service, not just the rollback
+        # (audit F2/H3): a cross-service write (e.g. rotate_certificate on an
+        # unrelated service) must not reach the human as "reviewed".
+        off_scope = [s["action"] for s in steps
+                     if "service" in s.get("args", {})
+                     and s["args"]["service"] != service]
+        check("service-scope",
+              not off_scope,
+              f"every step must target the incident service {service!r}; "
+              f"off-scope: {off_scope}")
 
         check("addresses-failure-class",
               not rca.output.get("failure_class", "").startswith(
