@@ -50,10 +50,26 @@ export async function detectMode(): Promise<Mode> {
   }
 }
 
-export async function triggerIncident(live: boolean): Promise<Incident> {
-  if (live) return api<Incident>("/v1/incidents", "POST", {});
+export interface ScenarioInfo {
+  id: string;
+  name: string;
+  expected_outcome: string;
+}
+
+export async function listScenarios(): Promise<ScenarioInfo[]> {
+  const result = await api<{ scenarios: ScenarioInfo[] }>("/v1/scenarios");
+  return result.scenarios;
+}
+
+export async function triggerIncident(
+  live: boolean,
+  scenario?: string,
+): Promise<Incident> {
+  if (live) {
+    return api<Incident>("/v1/incidents", "POST", scenario ? { scenario } : {});
+  }
   await delay(600);
-  return DEMO.created;
+  return DEMO.created; // DEMO mode only has the canonical transcript recorded
 }
 
 export async function decide(

@@ -109,6 +109,40 @@ class TestApi(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             self.assertEqual(exc.code, 401)
 
+    def test_scenarios_endpoint_lists_golden_set(self):
+        status, body = _request(self.port, "/v1/scenarios")
+        self.assertEqual(status, 200)
+        ids = {s["id"] for s in body["scenarios"]}
+        self.assertIn("s4-cert-expiry", ids)
+        self.assertIn("s5-reverted-pool", ids)
+        self.assertGreaterEqual(len(body["scenarios"]), 7)
+
+    def test_create_runs_the_selected_scenario(self):
+        # Phase P: the API can run any scenario, not just the canonical one.
+        _, cert = _request(self.port, "/v1/incidents", method="POST",
+                          body={"scenario": "s4-cert-expiry"})
+        self.assertEqual(cert["diagnosis"]["failure_class"], "cert-expiry/tls")
+        self.assertEqual([p["action"] for p in cert["plan"]],
+                         ["rotate_certificate"])
+
+    def test_adversarial_scenario_escalates_over_the_api(self):
+        _, adv = _request(self.port, "/v1/incidents", method="POST",
+                         body={"scenario": "s5-reverted-pool"})
+        self.assertEqual(adv["status"], "FAILED")
+        self.assertIn("escalate", adv["error"])
+
+    def test_default_create_is_still_canonical(self):
+        _, inc = _request(self.port, "/v1/incidents", method="POST", body={})
+        self.assertEqual(inc["diagnosis"]["suspect_commit"], "c9a1f42")
+
+    def test_unknown_scenario_is_400(self):
+        try:
+            _request(self.port, "/v1/incidents", method="POST",
+                     body={"scenario": "nope"})
+            self.fail("expected 400")
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 400)
+
     def test_health_is_open(self):
         status, body = _request(self.port, "/health", token=None)
         self.assertEqual(status, 200)

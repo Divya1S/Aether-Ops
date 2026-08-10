@@ -128,9 +128,12 @@ aetherops:latest`.
 Open `http://localhost:8080/` and you get a real **operator console** — a
 **React 19 + TypeScript** app (`web/`, built with Vite into one
 self-contained, CSP-safe file the stdlib API serves; `make web` rebuilds it):
-trigger the SEV2 incident, watch the agent pipeline and cited evidence
-render, **approve the rollback at the policy gate**, and read the generated
-postmortem — all driving the live endpoints. The same app also scores
+trigger the canonical SEV2 incident **or pick any golden scenario** from the
+dropdown — the adversarial ones (a pool *reduction*, a deploy *after* symptom
+onset) visibly **escalate** instead of remediating — watch the agent pipeline
+and cited evidence render, **approve the rollback at the policy gate**, and
+read the generated postmortem — all driving the live endpoints
+(`GET /v1/scenarios` lists them). The same app also scores
 changes, searches runbooks, and runs the evaluation. The
 [public demo]( https://divya1s.github.io/Aether-Ops/) is that exact console
 in **recorded mode** (a real transcript captured from the API), so it's

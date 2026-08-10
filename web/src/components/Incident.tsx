@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Agent, Evidence, Incident, PlanStep } from "../types";
-import { decide, triggerIncident } from "../api";
+import { decide, listScenarios, triggerIncident } from "../api";
+import type { ScenarioInfo } from "../api";
 
 const confColor = (c: number): string =>
   c >= 0.8 ? "var(--green)" : c >= 0.5 ? "var(--amber)" : "var(--red)";
@@ -74,6 +75,12 @@ export function IncidentTab({ live }: { live: boolean }) {
   const [denied, setDenied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioInfo[]>([]);
+  const [selected, setSelected] = useState("");
+
+  useEffect(() => {
+    if (live) listScenarios().then(setScenarios).catch(() => setScenarios([]));
+  }, [live]);
 
   async function onTrigger() {
     setBusy(true);
@@ -81,7 +88,7 @@ export function IncidentTab({ live }: { live: boolean }) {
     setResolved(null);
     setDenied(false);
     try {
-      setIncident(await triggerIncident(live));
+      setIncident(await triggerIncident(live, selected || undefined));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -111,15 +118,33 @@ export function IncidentTab({ live }: { live: boolean }) {
     <section>
       <div className="panel row spread">
         <div>
-          <h2 style={{ margin: 0 }}>Autonomous SEV2 remediation</h2>
+          <h2 style={{ margin: 0 }}>Autonomous incident remediation</h2>
           <p className="muted">
-            A checkout-service latency incident, end to end: gather → screen →
-            diagnose → plan → gate → execute → verify → learn.
+            End to end: gather → screen → diagnose → plan → gate → execute →
+            verify → learn.
+            {live && scenarios.length > 0 &&
+              " Pick a scenario — the adversarial ones escalate instead of remediating."}
           </p>
         </div>
-        <button className="act" onClick={onTrigger} disabled={busy}>
-          ▶ Trigger incident
-        </button>
+        <div className="row">
+          {live && scenarios.length > 0 && (
+            <select
+              className="q"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
+              <option value="">canonical (default)</option>
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {s.expected_outcome}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="act" onClick={onTrigger} disabled={busy}>
+            ▶ Trigger incident
+          </button>
+        </div>
       </div>
 
       {error && <div className="panel" style={{ color: "var(--red)" }}>Error: {error}</div>}
@@ -158,37 +183,53 @@ export function IncidentTab({ live }: { live: boolean }) {
             <div className="panel">
               <h2>Remediation plan (Step Catalog actions only)</h2>
               <PlanTable plan={incident.plan} />
-              {resolved ? (
-                <div className="gate ok">
-                  <b className="ok">✓ Approved — executed, verified, learned.</b>
-                  <p className="muted" style={{ marginTop: ".3rem" }}>
-                    Recovery verified; incident episode written to memory.
-                  </p>
-                </div>
-              ) : denied ? (
-                <div className="gate no">
-                  <b style={{ color: "var(--red)" }}>
-                    ✕ Denied — escalated to a human. Nothing executed.
-                  </b>
-                </div>
-              ) : (
-                <div className="gate">
-                  <b className="warn">⏸ PAUSED at approval gate — tier {incident.approval_tier}</b>
-                  <p className="muted" style={{ margin: ".3rem 0 .7rem" }}>
-                    HIGH-risk write in prod requires human approval. Nothing has executed.
-                  </p>
-                  <div className="row">
-                    <button className="act approve" onClick={() => onDecide(true)} disabled={busy}>
-                      ✓ Approve rollback
-                    </button>
-                    <button className="act deny" onClick={() => onDecide(false)} disabled={busy}>
-                      ✕ Deny
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
+
+          {resolved ? (
+            <div className="panel">
+              <div className="gate ok">
+                <b className="ok">✓ Approved — executed, verified, learned.</b>
+                <p className="muted" style={{ marginTop: ".3rem" }}>
+                  Recovery verified; incident episode written to memory.
+                </p>
+              </div>
+            </div>
+          ) : denied ? (
+            <div className="panel">
+              <div className="gate no">
+                <b style={{ color: "var(--red)" }}>
+                  ✕ Denied — escalated to a human. Nothing executed.
+                </b>
+              </div>
+            </div>
+          ) : incident.pending_gate ? (
+            <div className="panel">
+              <div className="gate">
+                <b className="warn">⏸ PAUSED at approval gate — tier {incident.approval_tier}</b>
+                <p className="muted" style={{ margin: ".3rem 0 .7rem" }}>
+                  HIGH-risk write in prod requires human approval. Nothing has executed.
+                </p>
+                <div className="row">
+                  <button className="act approve" onClick={() => onDecide(true)} disabled={busy}>
+                    ✓ Approve rollback
+                  </button>
+                  <button className="act deny" onClick={() => onDecide(false)} disabled={busy}>
+                    ✕ Deny
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : incident.status === "FAILED" ? (
+            <div className="panel">
+              <div className="gate no">
+                <b style={{ color: "var(--red)" }}>
+                  ⇱ Escalated — the platform refused to auto-remediate.
+                </b>
+                <p className="muted" style={{ marginTop: ".3rem" }}>{incident.error}</p>
+              </div>
+            </div>
+          ) : null}
 
           {resolved?.postmortem_excerpt && (
             <div className="panel">
