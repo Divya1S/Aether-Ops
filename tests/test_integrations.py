@@ -5,6 +5,7 @@ default and CI (which installs no extras) stays green and network-free. Run
 locally after `pip install "aetherops[langgraph,api,vectorstores]"`.
 """
 import importlib.util
+import os
 import unittest
 
 
@@ -82,6 +83,36 @@ class TestFastAPISurface(unittest.TestCase):
     def test_auth_is_required(self):
         self.assertEqual(
             self.client.post("/v1/incidents", json={}).status_code, 401)
+
+
+@unittest.skipUnless(_has("chromadb"), "vectorstores extra (chromadb) not installed")
+class TestChromaVectorStore(unittest.TestCase):
+    """RAG retrieval over a real in-process ChromaDB collection."""
+
+    @classmethod
+    def setUpClass(cls):
+        from aetherops.integrations.vectorstores import ChromaVectorStore
+        cls.store = ChromaVectorStore()
+
+    def test_retrieves_relevant_runbooks(self):
+        self.assertIn("runbook-rollback", self.store.search_docs(
+            "roll back a bad deploy to the previous revision", k=3))
+        self.assertIn("runbook-cert", self.store.search_docs(
+            "TLS handshake failures and SSL errors in client logs", k=3))
+        self.assertIn("runbook-conn-pool", self.store.search_docs(
+            "how should I size a database connection pool", k=3))
+
+
+@unittest.skipUnless(_has("psycopg") and os.environ.get("DATABASE_URL"),
+                     "pgvector: psycopg + DATABASE_URL required")
+class TestPgVectorStore(unittest.TestCase):
+    """RAG retrieval over Postgres + pgvector (runs only with a live DB)."""
+
+    def test_retrieves_via_pgvector_cosine(self):
+        from aetherops.integrations.vectorstores import PgVectorStore
+        store = PgVectorStore()
+        self.assertIn("runbook-rollback",
+                      store.search_docs("roll back a bad deploy", k=3))
 
 
 if __name__ == "__main__":
