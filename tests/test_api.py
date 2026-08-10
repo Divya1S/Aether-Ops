@@ -81,6 +81,34 @@ class TestApi(unittest.TestCase):
             self.assertNotIn("cdn.", html)
             self.assertNotIn("<script src=", html)
 
+    def test_incident_audit_chain_is_reachable_and_verified(self):
+        # audit H3a/H7: the hash-chained ledger must be fetchable and
+        # verifiable over the API, not write-only-then-discarded.
+        _, created = _request(self.port, "/v1/incidents", "POST", {})
+        inc = created["incident_id"]
+        status, audit = _request(self.port, f"/v1/incidents/{inc}/audit")
+        self.assertEqual(status, 200)
+        self.assertTrue(audit["chain_verified"])
+        self.assertGreater(audit["count"], 0)
+        self.assertEqual(audit["incident_id"], inc)   # correlated by id
+        actions = {r["action"] for r in audit["records"]}
+        self.assertIn("workflow.start", actions)
+        self.assertIn("model.call", actions)
+
+    def test_audit_unknown_incident_is_404(self):
+        try:
+            _request(self.port, "/v1/incidents/inc_nope/audit")
+            self.fail("expected 404")
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 404)
+
+    def test_audit_requires_a_token(self):
+        try:
+            _request(self.port, "/v1/incidents/x/audit", token=None)
+            self.fail("expected 401")
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 401)
+
     def test_health_is_open(self):
         status, body = _request(self.port, "/health", token=None)
         self.assertEqual(status, 200)

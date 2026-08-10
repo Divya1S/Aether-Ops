@@ -2,9 +2,15 @@
 
 Every orchestrator transition, tool call, model call, policy decision, and
 approval lands here. Each record's hash covers the previous record's hash, so
-any tampering breaks verification from that point forward. Production ships
-the chain to WORM object storage; the reference implementation keeps it
-in-memory with optional JSONL persistence.
+a naive in-place edit or reordering breaks verification from that point on
+(proven in tests). Honest threat model: this detects accidental corruption
+and casual tampering; it is NOT proof against an adversary with write access
+to the log itself, who could re-chain every following record, and chain-only
+verify() cannot detect trailing truncation. Production closes both gaps by
+HMAC-signing records with an out-of-band key and anchoring the tip (hash +
+count) in WORM storage. The reference implementation keeps the chain
+in-memory with optional JSONL persistence and makes it reachable for
+verification via GET /v1/incidents/{id}/audit.
 """
 from __future__ import annotations
 

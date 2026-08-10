@@ -25,6 +25,7 @@ import hmac
 import json
 import os
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -209,12 +210,34 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return {}
 
-    def log_message(self, *args):        # structured access log, opt-in
-        if os.environ.get("AETHEROPS_API_LOG"):
-            print(json.dumps({"api": self.path, "method": self.command}))
+    def _correlation_id(self) -> str:
+        """The incident id doubles as the request correlation id, tying an
+        access-log line to the incident's audit chain (audit H7)."""
+        parts = urlparse(self.path).path.split("/")
+        if "incidents" in parts:
+            idx = parts.index("incidents")
+            if idx + 1 < len(parts):
+                return parts[idx + 1]
+        return "-"
+
+    def log_request(self, code="-", size="-"):
+        """One structured access line per request (opt-in via AETHEROPS_API_LOG;
+        `make serve` sets it). Status, role, correlation id, and latency — the
+        minimum needed to debug a request and find its audit chain (audit H7)."""
+        if not os.environ.get("AETHEROPS_API_LOG"):
+            return
+        print(json.dumps({
+            "method": self.command, "path": self.path,
+            "status": int(code) if str(code).isdigit() else code,
+            "role": self._role() or "anon",
+            "corr_id": self._correlation_id(),
+            "latency_ms": round(
+                (time.monotonic() - getattr(self, "_t0", time.monotonic()))
+                * 1000, 1)}), flush=True)
 
     # ------------------------------------------------------------------ GET
     def do_GET(self):
+        self._t0 = time.monotonic()
         parsed = urlparse(self.path)
         if parsed.path in ("/", "/app", "/index.html"):
             return self._send_ui()
@@ -239,6 +262,23 @@ class Handler(BaseHTTPRequestHandler):
                      "excerpt": r.chunk.text[:200]}
                     for r in STATE.rag.search(query, k=5)]
             return self._send(200, {"query": query, "results": hits})
+        if (parsed.path.startswith("/v1/incidents/")
+                and parsed.path.endswith("/audit")):
+            # Governance made visible (audit H3a/H7): fetch an incident's
+            # hash-chained ledger and its verification status. The "recorded,
+            # tamper-evident" claim is only real if it is reachable.
+            incident_id = parsed.path.split("/")[3]
+            entry = STATE.incidents.get(incident_id)
+            if entry is None:
+                return self._send(404, {"error": "unknown incident"})
+            audit = entry["env"]["audit"]
+            return self._send(200, {
+                "incident_id": incident_id,
+                "count": len(audit.records),
+                "chain_verified": audit.verify(),
+                "records": [{"seq": r.seq, "ts": r.ts, "actor": r.actor,
+                             "action": r.action, "payload": r.payload}
+                            for r in audit.records]})
         if parsed.path.startswith("/v1/incidents/"):
             incident_id = parsed.path.rsplit("/", 1)[-1]
             entry = STATE.incidents.get(incident_id)
@@ -254,6 +294,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ----------------------------------------------------------------- POST
     def do_POST(self):
+        self._t0 = time.monotonic()
         parsed = urlparse(self.path)
 
         if parsed.path == "/v1/incidents":

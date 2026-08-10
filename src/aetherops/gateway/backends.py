@@ -63,6 +63,11 @@ class OllamaBackend:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            # Bound output length so one call's tokens (hence latency and
+            # modeled cost) can't run away (audit H6). Diagnoses and plans are
+            # short; a runaway generation is never useful here.
+            "options": {"num_predict": int(os.environ.get(
+                "AETHEROPS_OLLAMA_MAX_TOKENS", "1024"))},
         }).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}/api/generate", data=payload,

@@ -29,7 +29,7 @@ demo-live:
 	$(PY) -m aetherops --approve --live
 
 serve:
-	AETHEROPS_ALLOW_DEV_TOKEN=1 $(PY) -m aetherops.api
+	AETHEROPS_ALLOW_DEV_TOKEN=1 AETHEROPS_API_LOG=1 $(PY) -m aetherops.api
 
 docker:
 	docker build -t aetherops:latest .

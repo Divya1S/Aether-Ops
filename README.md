@@ -125,8 +125,12 @@ mode** automatically.
 
 `POST /v1/incidents` starts an incident and runs it to the approval gate;
 `POST /v1/incidents/{id}/approvals {"decision":"approve"}` replays the exact
-gate semantics and returns the generated postmortem; `/v1/changes/score`,
-`/v1/evals`, and `/v1/runbooks/search` expose the rest. Every mutating
+gate semantics and returns the generated postmortem;
+`GET /v1/incidents/{id}/audit` returns that incident's hash-chained ledger
+with its live verification status, so the governance trail is *reachable*,
+not just written; `/v1/changes/score`, `/v1/evals`, and
+`/v1/runbooks/search` expose the rest. Each request emits a structured
+access log (status, role, correlation id = incident id, latency). Every mutating
 endpoint requires `Authorization: Bearer $AETHEROPS_API_TOKEN`. State can
 persist across restarts via the SQLite-backed memory and tamper-evident
 audit ledger (`storage/sqlite.py`). There's also an **MCP server** —
