@@ -38,6 +38,23 @@ class TestChunking(unittest.TestCase):
             self.assertLessEqual(len(chunk.text), 80)
         self.assertLess(chunks[1].start, chunks[0].start + 80)  # overlap
 
+    def test_paragraph_bounds_oversized_blocks(self):
+        # audit F4: a document with no blank lines must not become one
+        # unbounded chunk.
+        doc = Document(id="big", title="T", kind="postmortem",
+                       text="word " * 400)          # 2000 chars, single block
+        chunks = chunk_paragraph(doc, max_chars=300)
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk.text), 300)
+
+    def test_fixed_offsets_point_at_actual_text(self):
+        # audit F5: rag://doc#offset must not drift by stripped whitespace.
+        doc = Document(id="d", title="T", kind="runbook",
+                       text="First. " + "x" * 90 + " then more words here now.")
+        for chunk in chunk_fixed(doc, size=50, overlap=12):
+            self.assertTrue(doc.text[chunk.start:].startswith(chunk.text[:12]))
+
     def test_unknown_chunker_rejected(self):
         with self.assertRaises(ValueError):
             get_chunker("semantic-magic")

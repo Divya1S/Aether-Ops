@@ -38,15 +38,19 @@ class EpisodicMemory:
         if not query_tokens:
             return []
         scored = []
-        for episode in self._episodes:
+        for index, episode in enumerate(self._episodes):
             text = " ".join(
                 str(episode.get(field, ""))
                 for field in ("summary", "failure_class", "service"))
             overlap = len(query_tokens & _tokens(text))
             if overlap:
-                scored.append((overlap, episode))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        return [episode for _, episode in scored[:k]]
+                scored.append((overlap, episode, index))
+        # Tie-break deliberately (audit F11): equal overlap -> prefer a
+        # VERIFIED episode, then the more RECENT one (higher insertion index).
+        # The old default was insertion order, which favored stale precedent.
+        scored.sort(key=lambda t: (t[0], 1 if t[1].get("verified") else 0,
+                                   t[2]), reverse=True)
+        return [episode for _, episode, _ in scored[:k]]
 
     def __len__(self) -> int:
         return len(self._episodes)
