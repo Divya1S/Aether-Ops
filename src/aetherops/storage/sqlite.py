@@ -14,15 +14,29 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 
 from aetherops.memory.store import EpisodicMemory
 from aetherops.security.audit import AuditLog, AuditRecord
 
 
+def _connect(db_path: str) -> sqlite3.Connection:
+    """A connection safe to share across the API's worker threads (audit F12):
+    check_same_thread=False lets any pool thread use it, WAL improves
+    concurrency, and busy_timeout waits on a lock instead of raising
+    'database is locked'. Callers still serialize writes with a lock, since a
+    single sqlite3 connection is not safe for concurrent use."""
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
 class SqliteEpisodicMemory(EpisodicMemory):
     def __init__(self, db_path: str):
         super().__init__()
-        self._conn = sqlite3.connect(db_path)
+        self._db_lock = threading.Lock()
+        self._conn = _connect(db_path)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS episodes ("
             "id TEXT PRIMARY KEY, body TEXT NOT NULL)")
@@ -32,18 +46,20 @@ class SqliteEpisodicMemory(EpisodicMemory):
             self._episodes.append(json.loads(body))
 
     def add(self, episode: dict) -> str:
-        episode_id = super().add(episode)
-        self._conn.execute(
-            "INSERT OR REPLACE INTO episodes (id, body) VALUES (?, ?)",
-            (episode_id, json.dumps(self._episodes[-1], default=str)))
-        self._conn.commit()
-        return episode_id
+        with self._db_lock:
+            episode_id = super().add(episode)
+            self._conn.execute(
+                "INSERT OR REPLACE INTO episodes (id, body) VALUES (?, ?)",
+                (episode_id, json.dumps(self._episodes[-1], default=str)))
+            self._conn.commit()
+            return episode_id
 
 
 class SqliteAuditLog(AuditLog):
     def __init__(self, db_path: str):
         super().__init__()
-        self._conn = sqlite3.connect(db_path)
+        self._db_lock = threading.Lock()
+        self._conn = _connect(db_path)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS audit ("
             "seq INTEGER PRIMARY KEY, ts REAL, actor TEXT, action TEXT, "
@@ -58,11 +74,16 @@ class SqliteAuditLog(AuditLog):
 
     def append(self, *, actor: str, action: str,
                payload: dict | None = None) -> AuditRecord:
+        # super().append() assigns seq/prev-hash atomically under the base
+        # lock; the DB write is then serialized on _db_lock (one sqlite
+        # connection is not safe for concurrent use). seq is the PRIMARY KEY,
+        # so reload-by-seq reconstructs the chain regardless of insert order.
         record = super().append(actor=actor, action=action, payload=payload)
-        self._conn.execute(
-            "INSERT INTO audit VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (record.seq, record.ts, record.actor, record.action,
-             json.dumps(record.payload, default=str),
-             record.prev_hash, record.hash))
-        self._conn.commit()
+        with self._db_lock:
+            self._conn.execute(
+                "INSERT INTO audit VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (record.seq, record.ts, record.actor, record.action,
+                 json.dumps(record.payload, default=str),
+                 record.prev_hash, record.hash))
+            self._conn.commit()
         return record

@@ -137,7 +137,9 @@ not just written; `/v1/changes/score`, `/v1/evals`, and
 access log (status, role, correlation id = incident id, latency). Every mutating
 endpoint requires `Authorization: Bearer $AETHEROPS_API_TOKEN`. State can
 persist across restarts via the SQLite-backed memory and tamper-evident
-audit ledger (`storage/sqlite.py`). There's also an **MCP server** —
+audit ledger (`storage/sqlite.py`, WAL + serialized writes so it is safe to
+share across the API's worker threads; the audit append is atomic so the
+hash chain can't fork under concurrency). There's also an **MCP server** —
 `python3 -m aetherops.mcp` speaks JSON-RPC over stdio so any MCP client
 (Claude Code included) can search runbooks and pull eval summaries straight
 from the platform.
