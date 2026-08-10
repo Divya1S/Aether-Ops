@@ -22,6 +22,35 @@ def _hammer(fn, threads=16, per_thread=8):
     return threads * per_thread
 
 
+class TestAuditPersistence(unittest.TestCase):
+    """Phase M: a chain persisted to JSONL reloads and re-verifies — the
+    governance trail outlives the process."""
+
+    def test_attach_flushes_existing_then_persists(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "audit.jsonl")
+            log = AuditLog()
+            log.append(actor="pre", action="before-attach", payload={})
+            log.attach_path(path)                       # flushes the pre record
+            for i in range(4):
+                log.append(actor="t", action="a", payload={"i": i})
+            reloaded = AuditLog.load(path)
+            self.assertEqual(len(reloaded), 5)          # 1 pre + 4 after
+            self.assertTrue(reloaded.verify())
+
+    def test_reloaded_chain_still_detects_tampering(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "audit.jsonl")
+            log = AuditLog()
+            log.attach_path(path)
+            log.append(actor="t", action="a", payload={"amount": 10})
+            log.append(actor="t", action="b", payload={"amount": 20})
+            reloaded = AuditLog.load(path)
+            object.__setattr__(reloaded._records[0], "payload",
+                               {"amount": 999})
+            self.assertFalse(reloaded.verify())
+
+
 class TestConcurrency(unittest.TestCase):
     def test_in_memory_audit_append_is_atomic(self):
         # audit F13: without a lock, concurrent appends fork the chain and

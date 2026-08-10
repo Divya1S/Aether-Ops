@@ -147,8 +147,11 @@ and shared — the flywheel spans requests and survives a restart (an incident
 run today raises the change-risk of a similar deploy tomorrow, across
 reboots). The store is WAL + serialized-write safe to share across the API's
 worker threads, and the audit append is atomic so the hash chain can't fork
-under concurrency (`storage/sqlite.py`). Default (no `AETHEROPS_DB`) stays
-in-memory so demos and tests are byte-stable. There's also an **MCP server** —
+under concurrency (`storage/sqlite.py`). Each incident's audit chain persists
+too (JSONL beside the DB) and is reloadable + re-verifiable via
+`GET /v1/incidents/{id}/audit` after a restart — the governance trail
+outlives the process. Default (no `AETHEROPS_DB`) stays in-memory so demos
+and tests are byte-stable. There's also an **MCP server** —
 `python3 -m aetherops.mcp` speaks JSON-RPC over stdio so any MCP client
 (Claude Code included) can search runbooks and pull eval summaries straight
 from the platform.

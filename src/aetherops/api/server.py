@@ -85,6 +85,13 @@ class AppState:
         # a restart), bounded in-memory otherwise. Seeded with the canonical
         # learned episode so risk differentiation is visible from request one.
         self.db_path = os.environ.get("AETHEROPS_DB") or None
+        # Per-incident audit chains persist as JSONL beside the DB, so a past
+        # incident's governance trail is reloadable + verifiable after a
+        # restart (Phase M).
+        self.audit_dir = None
+        if self.db_path:
+            self.audit_dir = self.db_path + ".audit"
+            os.makedirs(self.audit_dir, exist_ok=True)
         self.memory = (SqliteEpisodicMemory(self.db_path) if self.db_path
                        else EpisodicMemory(max_episodes=1000))
         if len(self.memory) == 0:
@@ -292,9 +299,14 @@ class Handler(BaseHTTPRequestHandler):
             # tamper-evident" claim is only real if it is reachable.
             incident_id = parsed.path.split("/")[3]
             entry = STATE.incidents.get(incident_id)
-            if entry is None:
+            persisted = (os.path.join(STATE.audit_dir, f"{incident_id}.jsonl")
+                         if STATE.audit_dir else None)
+            if entry is not None:
+                audit = entry["env"]["audit"]
+            elif persisted and os.path.exists(persisted):
+                audit = AuditLog.load(persisted)     # reloaded after a restart
+            else:
                 return self._send(404, {"error": "unknown incident"})
-            audit = entry["env"]["audit"]
             return self._send(200, {
                 "incident_id": incident_id,
                 "count": len(audit.records),
@@ -341,6 +353,9 @@ class Handler(BaseHTTPRequestHandler):
                 # spans requests and survives a restart (Phase K). Default
                 # mode keeps each incident's memory isolated (test-stable).
                 env["memory"] = STATE.memory
+                # ...and this incident's audit chain persists to JSONL (M).
+                env["audit"].attach_path(
+                    os.path.join(STATE.audit_dir, f"{incident.id}.jsonl"))
             entry = {"incident": incident, "env": env, "run": None,
                      "ctx": None, "fence": uuid.uuid4().hex,
                      "phase": "RUNNING"}

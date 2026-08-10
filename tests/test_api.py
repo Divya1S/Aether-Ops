@@ -245,6 +245,8 @@ class TestPersistence(unittest.TestCase):
 
                 restarted = api_server.AppState()               # new process
                 self.assertEqual(len(restarted.memory), 2)      # durable
+                state.memory.close()
+                restarted.memory.close()
             finally:
                 os.environ.pop("AETHEROPS_DB", None)
 
@@ -252,6 +254,39 @@ class TestPersistence(unittest.TestCase):
         state = api_server.AppState()
         self.assertIsNone(state.db_path)
         self.assertEqual(len(state.memory), 1)
+        self.assertIsNone(state.audit_dir)
+
+    def test_audit_chain_persists_and_reverifies_after_restart(self):
+        import os
+        import tempfile
+
+        from aetherops.demo import build_demo_environment
+        from aetherops.security.audit import AuditLog
+        from aetherops.workflows.incident_remediation import \
+            run_incident_remediation
+
+        with tempfile.TemporaryDirectory() as directory:
+            os.environ["AETHEROPS_DB"] = os.path.join(directory, "aether.db")
+            try:
+                state = api_server.AppState()
+                incident, env = build_demo_environment()
+                env["memory"] = state.memory
+                path = os.path.join(state.audit_dir, f"{incident.id}.jsonl")
+                env["audit"].attach_path(path)
+                paused, ctx = run_incident_remediation(incident, **env)
+                run_incident_remediation(
+                    incident, **env, ctx=ctx,
+                    approvals={paused.pending_gate: True},
+                    checkpoint=paused.checkpoint)
+
+                # Reload from disk exactly as GET /audit does post-restart.
+                reloaded = AuditLog.load(path)
+                self.assertEqual(len(reloaded), len(env["audit"].records))
+                self.assertGreater(len(reloaded), 20)
+                self.assertTrue(reloaded.verify())      # governance survived
+                state.memory.close()
+            finally:
+                os.environ.pop("AETHEROPS_DB", None)
 
 
 if __name__ == "__main__":

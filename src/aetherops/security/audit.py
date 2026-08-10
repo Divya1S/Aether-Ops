@@ -48,6 +48,33 @@ class AuditLog:
         self._path = path
         self._lock = threading.Lock()
 
+    def attach_path(self, path: str) -> None:
+        """Turn on JSONL persistence after construction (the API builds the
+        env, learns the incident id, then attaches a per-incident path).
+        Flushes any already-recorded records so the file is complete."""
+        with self._lock:
+            self._path = path
+            with open(path, "a", encoding="utf-8") as fh:
+                for record in self._records:
+                    fh.write(json.dumps(record.__dict__, default=str) + "\n")
+
+    @classmethod
+    def load(cls, path: str) -> "AuditLog":
+        """Reload a chain from its JSONL file (read-only: path stays None so a
+        loaded log never re-appends). verify() then re-checks the reloaded
+        chain — governance survives a restart (Phase M)."""
+        log = cls(path=None)
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                log._records.append(AuditRecord(
+                    seq=data["seq"], ts=data["ts"], actor=data["actor"],
+                    action=data["action"], payload=data["payload"],
+                    prev_hash=data["prev_hash"], hash=data["hash"]))
+        return log
+
     def append(self, *, actor: str, action: str, payload: dict | None = None) -> AuditRecord:
         payload = payload or {}
         # Atomic seq + prev-hash + append (audit F13): without the lock, two

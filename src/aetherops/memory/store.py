@@ -54,3 +54,6 @@ class EpisodicMemory:
 
     def __len__(self) -> int:
         return len(self._episodes)
+
+    def close(self) -> None:        # no-op; the SQLite subclass releases its conn
+        pass

@@ -54,6 +54,10 @@ class SqliteEpisodicMemory(EpisodicMemory):
             self._conn.commit()
             return episode_id
 
+    def close(self) -> None:
+        with self._db_lock:
+            self._conn.close()
+
 
 class SqliteAuditLog(AuditLog):
     def __init__(self, db_path: str):
@@ -87,3 +91,7 @@ class SqliteAuditLog(AuditLog):
                  record.prev_hash, record.hash))
             self._conn.commit()
         return record
+
+    def close(self) -> None:
+        with self._db_lock:
+            self._conn.close()
