@@ -22,7 +22,7 @@ past incidents — or the system says "insufficient evidence" and escalates.
 ## Run it (zero dependencies)
 
 ```bash
-make test         # 141 tests, pure stdlib — no network, no keys
+make test         # 200+ tests, pure stdlib — no network, no keys
 make demo         # canonical SEV2 end-to-end (deterministic offline backend)
 make eval         # golden scenarios (n=4) + retrieval quality, dual gates
 make demo-live    # same incident, diagnosed by a real local model (free)
@@ -194,5 +194,35 @@ callable only by the Control plane's executor principal (a compromised
 agent physically cannot invoke a rollback — audited as `tool.denied`); and
 API tokens carry roles (viewer/operator/approver/admin) checked against a
 policy table, so a viewer can read everything and mutate nothing.
+
+## Optional integrations (framework interop)
+
+The core is deliberately pure stdlib — that is the platform's identity, and
+what keeps CI network-free and byte-reproducible. But the same architecture
+maps cleanly onto the industry-standard stacks, so those mappings ship as
+**genuine, opt-in extras**. Each is real code with a test that runs the
+integration; each lives under `integrations/` and **the core never imports
+it**, so installing none (as CI does) leaves the stdlib suite untouched and
+these tests simply skip.
+
+```bash
+pip install "aetherops[langgraph,api,vectorstores,tracing,finetune]"
+PYTHONPATH=src python3 -m unittest tests.test_integrations tests.test_finetune -v
+```
+
+| Extra | What it really does | Verified by |
+|-------|---------------------|-------------|
+| `langgraph` | The same specialized agents run as a real LangGraph `StateGraph` — nodes per agent, conditional routing (escalate vs. proceed), and a genuine human-in-the-loop **interrupt** at the approval gate via a checkpointer. | canonical remediates through the graph; the adversarial scenario routes to *escalate*; the HITL gate can deny. |
+| `api` | The incident lifecycle exposed as an idiomatic **FastAPI** app — Pydantic models, a Bearer-token dependency, typed handlers, auto OpenAPI `/docs` — over the same core functions the stdlib server uses. | full lifecycle over `TestClient` (create → `PAUSED` → fence-approve → `SUCCEEDED`), scenario selection, 401 without a token. |
+| `vectorstores` | RAG retrieval over real vector DBs: in-process **ChromaDB** (cosine HNSW, bring-your-own embeddings → no download, $0) and a **pgvector** adapter (Postgres `<=>` cosine, real SQL). Drop-in `search_docs(query, k)`. | Chroma indexes the seed runbooks and retrieves the right doc for labeled queries; pgvector runs against a live DB. |
+| `tracing` | **LangSmith** distributed tracing on the gateway's single choke point — every model call becomes a nested run with tier/model/tokens/cost — transparent, and only ships traces when `LANGCHAIN_TRACING_V2` is set. | tracing is transparent to single completions and to a full incident run. |
+| `finetune` | **LoRA/PEFT** fine-tuning that distills the planner's deterministic policy into a small model for cheap structured-output serving — `dataset.py` builds a schema-validated SFT corpus (stdlib, CI-verified), `train_lora.py` trains the adapter ([docs/18](docs/18-fine-tuning.md)). | the 60-example corpus is schema-valid + grounded (CI); a CPU smoke-train emits a real adapter. |
+
+Why these and not others: RAGAS-style faithfulness scoring is already native
+(the LLM-as-judge with a deterministic citation anchor), and RAGAS's current
+release pins `langchain<1`, which conflicts with the LangGraph extra — so the
+eval/observability keyword is served by LangSmith rather than a broken pin.
+The point of the table is not keyword coverage; it is that the deterministic
+core and the framework ecosystem are **the same design expressed twice**.
 
 

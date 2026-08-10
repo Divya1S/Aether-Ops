@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Test suite (62 tests, stdlib only)
+      - name: Test suite (stdlib only; optional-integration tests skip)
         run: make test
       - name: Evaluation release gate (fails below Phase 1 precision)
         run: make eval
