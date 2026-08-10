@@ -6,11 +6,48 @@ human is ever asked to approve.
 """
 from __future__ import annotations
 
+import re
+
 from aetherops.agents.base import Agent, PermanentError, score_confidence
 from aetherops.agents.planner import STEP_CATALOG
 from aetherops.core.types import AgentResult
 from aetherops.gateway.model_gateway import TaskProfile
 from aetherops.prompts.registry import get_prompt
+
+_HHMM = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+def _minute_of_day(ts: str | None) -> int | None:
+    """Minutes-of-day from the first HH:MM in a timestamp. The golden
+    snapshots are same-day, so minute-of-day ordering is sufficient here;
+    production parses full RFC-3339 timestamps."""
+    match = _HHMM.search(ts or "")
+    return int(match.group(1)) * 60 + int(match.group(2)) if match else None
+
+
+def _first_breach(series: list[dict]) -> str | None:
+    """Timestamp of the first sample whose p99 exceeds 2x the baseline (first
+    sample) — a data-driven onset, not a hard-coded SLO threshold."""
+    if not series:
+        return None
+    baseline = series[0].get("p99_ms", 0)
+    for point in series:
+        if point.get("p99_ms", 0) > 2 * baseline:
+            return point.get("ts")
+    return None
+
+
+def _diff_raises_resource(diff: str) -> bool:
+    """True when the diff increases a numeric resource limit (a memory
+    regression must RAISE something to exhaust memory; a diff that lowers it
+    cannot be the cause). Falls back to intent keywords when no numeric
+    delta is present."""
+    removed = [int(n) for n in re.findall(r"-\s*[^\n:]*:\s*(\d+)", diff)]
+    added = [int(n) for n in re.findall(r"\+\s*[^\n:]*:\s*(\d+)", diff)]
+    if added and removed:
+        return max(added) > max(removed)
+    return bool(re.search(r"(?i)\b(rais\w*|increas\w*|bump\w*|expand\w*)\b",
+                          diff))
 
 
 class ReviewerAgent(Agent):
@@ -64,6 +101,37 @@ class ReviewerAgent(Agent):
             check("service-scope",
                   rollback["args"].get("service") == service,
                   "steps must be scoped to the incident's service")
+
+            # Temporal precedence: the deploy being reverted must PRE-date
+            # symptom onset, or it cannot be the cause (audit C4/H5 — the one
+            # check that questions the diagnosis, not the plan's self-
+            # consistency). Independent reads: the reviewer's own metrics fetch.
+            series = ctx.connectors.call(
+                "datadog", "query_metrics", {"service": service},
+                principal=self.name).data["series"]
+            deploy_ts = deploys[0].get("deployed_at") if deploys else None
+            breach_ts = _first_breach(series)
+            dep_min = _minute_of_day(deploy_ts)
+            breach_min = _minute_of_day(breach_ts)
+            check("temporal-precedence",
+                  dep_min is not None and breach_min is not None
+                  and dep_min <= breach_min,
+                  f"suspect deploy ({deploy_ts}) must precede first breach "
+                  f"({breach_ts})")
+
+            # Mechanism consistency: a memory regression's suspect commit must
+            # RAISE a resource limit; one that lowers a limit cannot exhaust
+            # memory (audit C4 — defends the live-model path the offline
+            # backend's direction-check covers for replay).
+            suspect = rca.output.get("suspect_commit")
+            if suspect and rca.output.get("failure_class", "").endswith(
+                    "/memory"):
+                diff = ctx.connectors.call(
+                    "github", "get_commit_diff", {"sha": suspect},
+                    principal=self.name).data["diff"]
+                check("mechanism-consistency", _diff_raises_resource(diff),
+                      "a memory regression's suspect commit must increase a "
+                      "resource limit, not reduce it")
 
         revert = next((s for s in steps
                        if s["action"] == "create_revert_pr"), None)

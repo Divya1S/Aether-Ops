@@ -142,7 +142,13 @@ class KnowledgeAgent(Agent):
             if action == "get_commit_diff" and args.get("sha") in pending_commits:
                 pending_commits.remove(args["sha"])
 
-        similar = ctx.memory.search(f"{service} OOMKilled pool latency deploy")
+        # Recall keyed on THIS incident (service + symptom), not a hard-coded
+        # OOM string, and only VERIFIED episodes seed a new diagnosis — a wrong
+        # past diagnosis must not confirm itself into the next one (audit H4).
+        similar = [episode
+                   for episode in ctx.memory.search(
+                       f"{service} {ctx.incident.title}")
+                   if episode.get("verified")]
         for episode in similar:
             ctx.add_evidence(Evidence(
                 id=new_id("ev"), kind="episode",

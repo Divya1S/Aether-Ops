@@ -25,11 +25,13 @@ def _memory_with_history():
     memory.add({"service": "payments-service",
                 "failure_class": "deploy-regression/memory",
                 "summary": "Connection pool increase caused OOMKilled cascade; "
-                           "rollback restored p99"})
+                           "rollback restored p99",
+                "verified": True})
     memory.add({"service": "checkout-service",
                 "failure_class": "deploy-regression/memory",
                 "summary": "Deploy raised DB connection pool max_size; "
-                           "OOMKilled breached p99; rollback verified"})
+                           "OOMKilled breached p99; rollback verified",
+                "verified": True})
     return memory
 
 

@@ -78,7 +78,7 @@ class AppState:
         # Change-risk scoring reads organizational memory: seed the canonical
         # learned episode so risk differentiation (the flywheel) is visible —
         # the same prior `make demo-change` uses.
-        self.change_memory = EpisodicMemory()
+        self.change_memory = EpisodicMemory(max_episodes=1000)
         self.change_memory.add({
             "service": "checkout-service",
             "failure_class": "deploy-regression/memory",

@@ -65,7 +65,7 @@ class RootCauseAgent(Agent):
                 model_id=response.model_id, tokens=response.tokens)
 
         suspect = self._suspect_commit(ctx)
-        failure_class = self._classify(ctx, response.text)
+        failure_class = self._classify(ctx)
         # Grounding: a suspect commit corroborated in the text, or a known
         # non-change class whose symptom markers are corroborated by the
         # evidence bundle (cert expiry has no commit to ground against).
@@ -91,21 +91,32 @@ class RootCauseAgent(Agent):
             model_id=response.model_id, tokens=response.tokens)
 
     @staticmethod
-    def _classify(ctx, text: str) -> str:
-        """Failure class: taken from the model's text when it names a known
-        class; otherwise inferred deterministically from evidence markers —
-        deterministic validation wrapped around a probabilistic narrative,
-        the platform's standard pattern (docs/03 §2)."""
-        if "deploy-regression/memory" in text:
-            return "deploy-regression/memory"
-        if "cert-expiry/tls" in text:
-            return "cert-expiry/tls"
+    def _classify(ctx) -> str:
+        """Failure class inferred DETERMINISTICALLY from evidence markers,
+        never from the model's free text (audit H5). A class must not be
+        settable by a substring a live model emits or an attacker injects into
+        a commit body — so the model text is ignored here entirely; the prose
+        is the model's, the control-flow class is the platform's. Direction
+        (whether the pool change could actually cause OOM) is verified
+        independently by the Reviewer's mechanism-consistency check."""
         has_oom = any("OOMKilled" in e.summary
                       for e in ctx.evidence_of_kind("k8s-event"))
         pool_commit = any("pool" in e.summary.lower()
                           for e in ctx.evidence_of_kind("commit"))
-        if has_oom and pool_commit and ctx.evidence_of_kind("deploy"):
+        # A "no deployments in the lookback window" evidence line is not a
+        # deploy: require deploy evidence that names an actual deployment.
+        has_deploy = any("no deployment" not in e.summary.lower()
+                         for e in ctx.evidence_of_kind("deploy"))
+        if has_oom and pool_commit and has_deploy:
             return "deploy-regression/memory"
+        # Cert expiry has no correlated deploy; require TLS symptom markers in
+        # the evidence bundle, not merely the class token in model prose.
+        tls_marker = any(
+            any(m in e.summary.lower()
+                for m in ("tls", "handshake", "certificate"))
+            for e in ctx.evidence)
+        if tls_marker and not has_deploy:
+            return "cert-expiry/tls"
         return "unclassified"
 
     @staticmethod

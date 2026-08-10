@@ -27,7 +27,8 @@ def main() -> int:
     report = run_all()
 
     print(f"{RULE}\nAetherOps evaluation — golden scenarios "
-          "(n=4, self-authored, offline-deterministic)\n"
+          f"(n={len(report['rows'])}, self-authored, offline-deterministic; "
+          "3 adversarial grounding cases)\n"
           f"{RULE}")
     for row in report["rows"]:
         verdict = "PASS" if row["correct"] or (

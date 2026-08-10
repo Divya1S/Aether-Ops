@@ -3,8 +3,9 @@ import unittest
 
 from aetherops.core.types import WorkflowStatus
 from aetherops.evals.harness import RCA_PRECISION_GATE, run_all, run_scenario
-from aetherops.evals.scenarios import (build_environment, payments_regression,
-                                       uncorrelated_latency)
+from aetherops.evals.scenarios import (build_environment, deploy_after_breach,
+                                       heap_oom, payments_regression,
+                                       reverted_pool, uncorrelated_latency)
 from aetherops.workflows.incident_remediation import run_incident_remediation
 
 
@@ -30,6 +31,32 @@ class TestGeneralization(unittest.TestCase):
         self.assertTrue(row["audit_verified"])
 
 
+class TestGroundingScenarios(unittest.TestCase):
+    """Adversarial scenarios that FALSIFY the grounding work (audit C4/H5):
+    revert a grounding check and one of these flips from escalated to
+    remediated, turning the gate red. That is what makes the eval an
+    evaluation and not a self-consistency fixture."""
+
+    def test_pool_reduction_is_not_blamed(self):
+        # A commit that LOWERS the pool cannot cause OOM -> decline, not
+        # a fabricated "raising the pool" diagnosis.
+        row = run_scenario(reverted_pool())
+        self.assertEqual(row["outcome"], "escalated")
+        self.assertIsNone(row["predicted_class"])
+
+    def test_late_deploy_is_rejected_on_temporal_precedence(self):
+        # A deploy that landed AFTER symptom onset cannot be the cause; the
+        # reviewer's temporal-precedence check must reject the rollback.
+        row = run_scenario(deploy_after_breach())
+        self.assertEqual(row["outcome"], "escalated")
+
+    def test_non_pool_memory_regression_escalates_honestly(self):
+        # No connection-pool signature -> the deterministic backend must
+        # escalate, not pattern-match "pool" from unrelated evidence.
+        row = run_scenario(heap_oom())
+        self.assertEqual(row["outcome"], "escalated")
+
+
 class TestHarnessReport(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -37,7 +64,7 @@ class TestHarnessReport(unittest.TestCase):
 
     def test_aggregate_metrics(self):
         aggregates = self.report["aggregates"]
-        self.assertEqual(aggregates["scenarios"], 4)
+        self.assertEqual(aggregates["scenarios"], 7)
         self.assertEqual(aggregates["rca_precision_at_1"], 1.0)
         self.assertEqual(aggregates["escalation_correctness"], 1.0)
         self.assertEqual(aggregates["plan_step_accuracy"], 1.0)

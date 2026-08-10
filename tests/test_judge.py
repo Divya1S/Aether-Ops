@@ -92,13 +92,14 @@ class TestHarnessIntegration(unittest.TestCase):
     def test_judge_runs_and_gates_in_the_report(self):
         report = run_all()
         judge = report["aggregates"]["judge"]
-        self.assertEqual(judge["judged"], 3)       # 3 diagnosed (s2 escalates)
+        # 4 diagnosed: s1, s3, s4, and s6 (which diagnoses, then the reviewer
+        # rejects it on temporal precedence — it is judged before rejection).
+        self.assertEqual(judge["judged"], 4)
         self.assertEqual(judge["total_hallucinated_refs"], 0)
         self.assertGreater(judge["mean_overall"], 0.8)
         self.assertTrue(report["judge_gate"]["passed"])
-        # Every diagnosed row carries a judgement; the escalation does not.
         judged_rows = [r for r in report["rows"] if r["judge"]]
-        self.assertEqual(len(judged_rows), 3)
+        self.assertEqual(len(judged_rows), 4)
 
 
 if __name__ == "__main__":

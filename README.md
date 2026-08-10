@@ -43,11 +43,22 @@ postmortem guidance through a hybrid (keyword + vector) retriever with
 configuration (fixed vs. paragraph, stdlib TF-IDF vs. Ollama embeddings);
 and `make eval` scores retrieval against a hand-labeled query set (n=22,
 self-labeled) — precision@1/precision@5/recall@5/MRR per chunking strategy,
-gated in CI. Golden-scenario metrics are honest about their scale: n=4
-self-authored scenarios spanning two diagnosable failure classes
-(deploy regression, certificate expiry) plus a must-escalate case — they
-gate the *pipeline* deterministically; `make eval --live` additionally
-reports (never gates) real-model behavior on the same set. The trust
+gated in CI. Golden-scenario metrics are honest about their scale: n=7
+self-authored scenarios — two diagnosable failure classes (deploy
+regression, certificate expiry), a must-escalate case, and **three
+adversarial grounding cases** the pipeline must *escalate* rather than
+mis-remediate: a pool *reduction* coincident with an OOM (which cannot be
+the cause), a deploy that landed *after* symptom onset, and a memory
+regression with no pool signature. These have teeth — reverting a grounding
+check flips an adversarial scenario from escalated to remediated and turns
+the gate red, which is what separates an evaluation from a self-consistency
+fixture. Grounding is falsifiable, not asserted: the failure class is
+inferred deterministically from evidence markers (never a model/injected
+substring), and the independent Reviewer checks **temporal precedence**
+(a suspect deploy must pre-date symptom onset) and **mechanism consistency**
+(a memory regression's commit must *raise* a resource, not lower it) against
+its own connector reads. `make eval --live` additionally reports (never
+gates) real-model behavior on the same set. The trust
 ladder demands sample size, not just precision: a correct-but-single-
 episode class stays advisory-only. Deterministic metrics can't grade the
 *quality of generated prose*, so an **LLM-as-judge** scores each root-cause

@@ -19,13 +19,18 @@ def _tokens(text: str) -> set[str]:
 
 
 class EpisodicMemory:
-    def __init__(self):
+    def __init__(self, max_episodes: int | None = None):
         self._episodes: list[dict] = []
+        # Bound growth for long-lived, shared instances (audit F9); None keeps
+        # the unbounded default the eval/replay paths rely on.
+        self._max = max_episodes
 
     def add(self, episode: dict) -> str:
         episode = dict(episode)
         episode.setdefault("id", new_id("ep"))
         self._episodes.append(episode)
+        if self._max is not None and len(self._episodes) > self._max:
+            del self._episodes[:len(self._episodes) - self._max]
         return episode["id"]
 
     def search(self, query: str, k: int = 3) -> list[dict]:

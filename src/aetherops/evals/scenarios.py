@@ -139,9 +139,92 @@ def cert_expiry() -> Scenario:
             expected_steps=("rotate_certificate",)))
 
 
+def reverted_pool() -> Scenario:
+    """Scenario 5 (adversarial) — a deploy that REDUCES the connection pool
+    coincides with an OOM incident. The pool decrease cannot cause memory
+    exhaustion, so blaming/rolling it back would be wrong. Ground truth:
+    escalate (the diagnoser must decline rather than fabricate 'raising the
+    pool'). Falsifies the C4 direction fix — revert it and this remediates."""
+    return Scenario(
+        id="s5-reverted-pool",
+        name="pool REDUCTION coincident with OOM — must not be blamed",
+        snapshot=Snapshot(
+            service="ops-service",
+            alert_id="P-9500",
+            alert_title="ops-service p99 latency > 1800ms",
+            triggered_at="2026-08-08T10:12:00Z",
+            p99_incident=(("10:00Z", 120), ("10:05Z", 1900), ("10:10Z", 2010)),
+            p99_post=(("10:40Z", 140), ("10:45Z", 132)),
+            revision="v2025.08.08-4",
+            previous_revision="v2025.08.08-3",
+            deployed_at="2026-08-08T10:02:00Z",
+            sha="d4e55aa",
+            commit_title="Lower DB connection pool max_size 200 -> 20",
+            commit_diff="-  max_size: 200\n+  max_size: 20",
+            oom_events=(("OOMKilled", "ops-3a1-2", "10:06Z"),
+                        ("OOMKilled", "ops-3a1-5", "10:07Z")),
+            oom_count=9),
+        truth=GroundTruth(outcome="escalated"))
+
+
+def deploy_after_breach() -> Scenario:
+    """Scenario 6 (adversarial) — a well-formed pool-increase deploy that
+    landed AFTER symptom onset, so it cannot be the cause. Ground truth:
+    escalate (the reviewer's temporal-precedence check must reject the
+    rollback). Falsifies the C4/H5 temporal check — revert it and this
+    remediates the wrong deploy."""
+    return Scenario(
+        id="s6-deploy-after-breach",
+        name="late deploy cannot be the cause (temporal precedence)",
+        snapshot=Snapshot(
+            service="ledger-service",
+            alert_id="P-9600",
+            alert_title="ledger-service p99 latency > 1600ms",
+            triggered_at="2026-08-08T16:20:00Z",
+            p99_incident=(("16:00Z", 110), ("16:05Z", 1700), ("16:10Z", 1750)),
+            p99_post=(("16:40Z", 130), ("16:45Z", 121)),
+            revision="v2025.08.08-9",
+            previous_revision="v2025.08.08-8",
+            deployed_at="2026-08-08T16:12:00Z",   # AFTER the 16:05 breach
+            sha="a7b0c31",
+            commit_title="Raise DB connection pool max_size 30 -> 300",
+            commit_diff="-  max_size: 30\n+  max_size: 300",
+            oom_events=(("OOMKilled", "ledger-77-1", "16:06Z"),
+                        ("OOMKilled", "ledger-77-3", "16:07Z")),
+            oom_count=7),
+        truth=GroundTruth(outcome="escalated"))
+
+
+def heap_oom() -> Scenario:
+    """Scenario 7 (adversarial) — a genuine memory regression from a JVM heap
+    change with NO connection-pool signature. The offline diagnoser cannot
+    ground it and must escalate honestly rather than pattern-match 'pool'.
+    Documents the deterministic backend's known limit (escalation-is-safe)."""
+    return Scenario(
+        id="s7-heap-oom",
+        name="memory regression without the pool signature (honest escalation)",
+        snapshot=Snapshot(
+            service="render-service",
+            alert_id="P-9700",
+            alert_title="render-service p99 latency > 1400ms",
+            triggered_at="2026-08-09T08:20:00Z",
+            p99_incident=(("08:00Z", 90), ("08:05Z", 1500), ("08:10Z", 1600)),
+            p99_post=(("08:40Z", 110), ("08:45Z", 101)),
+            revision="v2025.08.09-2",
+            previous_revision="v2025.08.09-1",
+            deployed_at="2026-08-09T08:02:00Z",
+            sha="c0ffee1",
+            commit_title="Bump JVM heap -Xmx 512m -> 4g",
+            commit_diff="-  -Xmx512m\n+  -Xmx4g",
+            oom_events=(("OOMKilled", "render-9z-2", "08:06Z"),
+                        ("OOMKilled", "render-9z-4", "08:07Z")),
+            oom_count=11),
+        truth=GroundTruth(outcome="escalated"))
+
+
 def all_scenarios() -> list[Scenario]:
     return [canonical(), uncorrelated_latency(), payments_regression(),
-            cert_expiry()]
+            cert_expiry(), reverted_pool(), deploy_after_breach(), heap_oom()]
 
 
 def build_environment(scenario: Scenario, audit_path: str | None = None,

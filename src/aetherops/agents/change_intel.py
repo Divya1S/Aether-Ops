@@ -54,9 +54,13 @@ class ChangeIntelligenceAgent(Agent):
         # has caused an incident before? Only incident episodes (those with a
         # failure_class) count — recorded change *decisions* are not
         # incidents and must not inflate the risk of later changes.
+        # Only VERIFIED incident episodes are precedent (audit H4). An
+        # unverified episode is a failed remediation — its diagnosis is
+        # unproven, so it must not inflate a later change's risk or it would
+        # amplify its own error.
         matched = [episode
                    for episode in ctx.memory.search(f"{change.title} {change.diff}")
-                   if episode.get("failure_class")]
+                   if episode.get("failure_class") and episode.get("verified")]
         for episode in matched:
             ctx.add_evidence(Evidence(
                 id=new_id("ev"), kind="episode",
@@ -68,6 +72,11 @@ class ChangeIntelligenceAgent(Agent):
                     excerpt=str(episode.get("summary", ""))[:200],
                     retrieved_at=time.time())))
 
+        # Service incident history counts every incident that OCCURRED on the
+        # service — deliberately NOT filtered by `verified` (unlike the
+        # failure-signature match above): a service with failed remediations is
+        # more incident-prone, not less, so excluding unverified episodes here
+        # would perversely make a troubled service look safe.
         service_history = [
             episode for episode in ctx.memory.search(change.service, k=10)
             if episode.get("service") == change.service

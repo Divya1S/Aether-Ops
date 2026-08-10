@@ -177,6 +177,21 @@ def _plan(prompt: str) -> str:
         "steps": steps})
 
 
+def _pool_reduced(prompt: str) -> bool:
+    """Whether the correlated commit *reduces* the pool — detected tightly
+    against the pool phrase itself (a decrease keyword immediately preceding
+    'pool', or a numeric 'N -> M' with M < N within a few chars of 'pool'), so
+    unrelated words elsewhere in the digest can't produce a false positive."""
+    if re.search(r"(?i)\b(revert\w*|lower\w*|reduc\w*|decreas\w*|downgrad\w*)"
+                 r"\s+(?:\w+\s+){0,3}?pool\b", prompt):
+        return True
+    for match in re.finditer(
+            r"(?i)pool[^\n]{0,40}?(\d+)\s*(?:->|to)\s*(\d+)", prompt):
+        if int(match.group(2)) < int(match.group(1)):
+            return True
+    return False
+
+
 def _diagnose(prompt: str) -> str:
     kinds: dict[str, int] = {}
     for match in _EVIDENCE_LINE.finditer(prompt):
@@ -184,7 +199,17 @@ def _diagnose(prompt: str) -> str:
 
     sha_match = _COMMIT_REF.search(prompt)
     has_oom = "OOMKilled" in prompt
-    has_pool_change = "pool" in prompt.lower()
+    # Scope pool detection to the COMMIT evidence line(s), not the whole digest
+    # (audit A1): a runbook that merely mentions a connection pool must not
+    # satisfy the deploy-regression signature, and direction awareness (audit
+    # C4) must read the actual change — never assert "raising the pool" unless
+    # the correlated commit is an increase; otherwise decline honestly.
+    commit_text = " ".join(
+        line for line in prompt.splitlines()
+        if (m := _EVIDENCE_LINE.match(line)) and m.group(2) == "commit")
+    has_pool_change = bool(re.search(
+        r"(?i)connection[ _-]?pool|pool[ _-]?size|max_size", commit_text))
+    pool_reduced = _pool_reduced(commit_text)
     required = {"metrics", "deploy", "commit", "k8s-event"}
 
     # Certificate-expiry class: TLS handshake failures with no correlated
@@ -204,6 +229,13 @@ def _diagnose(prompt: str) -> str:
             f"[E{kinds['k8s-event']}].{deploy_note}{runbook_note} "
             "Remediate by renewing and rotating the certificate. "
             "Recommended class: cert-expiry/tls.")
+
+    if (sha_match and has_oom and has_pool_change
+            and required <= kinds.keys() and pool_reduced):
+        return ("Insufficient evidence: the correlated commit REDUCES the "
+                "connection pool, which is inconsistent with a "
+                "memory-exhaustion mechanism — the change does not explain the "
+                "symptom. Escalate to a human with the partial bundle.")
 
     if not (sha_match and has_oom and has_pool_change
             and required <= kinds.keys()):
