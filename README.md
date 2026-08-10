@@ -136,10 +136,14 @@ not just written; `/v1/changes/score`, `/v1/evals`, and
 `/v1/runbooks/search` expose the rest. Each request emits a structured
 access log (status, role, correlation id = incident id, latency). Every mutating
 endpoint requires `Authorization: Bearer $AETHEROPS_API_TOKEN`. State can
-persist across restarts via the SQLite-backed memory and tamper-evident
-audit ledger (`storage/sqlite.py`, WAL + serialized writes so it is safe to
-share across the API's worker threads; the audit append is atomic so the
-hash chain can't fork under concurrency). There's also an **MCP server** —
+persist across restarts: set **`AETHEROPS_DB`** and the API's organizational
+memory becomes SQLite-backed, so every incident's learned episode is durable
+and shared — the flywheel spans requests and survives a restart (an incident
+run today raises the change-risk of a similar deploy tomorrow, across
+reboots). The store is WAL + serialized-write safe to share across the API's
+worker threads, and the audit append is atomic so the hash chain can't fork
+under concurrency (`storage/sqlite.py`). Default (no `AETHEROPS_DB`) stays
+in-memory so demos and tests are byte-stable. There's also an **MCP server** —
 `python3 -m aetherops.mcp` speaks JSON-RPC over stdio so any MCP client
 (Claude Code included) can search runbooks and pull eval summaries straight
 from the platform.

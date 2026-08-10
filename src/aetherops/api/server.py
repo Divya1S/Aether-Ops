@@ -43,6 +43,7 @@ from aetherops.evals.retrieval import run_retrieval_eval
 from aetherops.gateway.model_gateway import ModelGateway
 from aetherops.graph.service_graph import default_graph
 from aetherops.memory.store import EpisodicMemory
+from aetherops.storage.sqlite import SqliteEpisodicMemory
 from aetherops.policy.engine import PolicyEngine
 from aetherops.rag.retriever import RagStore
 from aetherops.security.audit import AuditLog
@@ -78,17 +79,23 @@ class AppState:
         self.state_lock = threading.Lock()
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
         self.async_inflight = 0     # guarded by state_lock (backpressure)
-        # Change-risk scoring reads organizational memory: seed the canonical
-        # learned episode so risk differentiation (the flywheel) is visible —
-        # the same prior `make demo-change` uses.
-        self.change_memory = EpisodicMemory(max_episodes=1000)
-        self.change_memory.add({
-            "service": "checkout-service",
-            "failure_class": "deploy-regression/memory",
-            "summary": "Deploy raised DB connection pool max_size 20 -> 200; "
-                       "OOMKilled cascade breached p99; rollback verified",
-            "remediation": ["rollback_deployment", "create_revert_pr"],
-            "verified": True})
+        # Organizational memory (Phase K): incidents write their learned
+        # episodes here and change-risk scoring reads them — the flywheel,
+        # across requests. DURABLE when AETHEROPS_DB is set (learning survives
+        # a restart), bounded in-memory otherwise. Seeded with the canonical
+        # learned episode so risk differentiation is visible from request one.
+        self.db_path = os.environ.get("AETHEROPS_DB") or None
+        self.memory = (SqliteEpisodicMemory(self.db_path) if self.db_path
+                       else EpisodicMemory(max_episodes=1000))
+        if len(self.memory) == 0:
+            self.memory.add({
+                "service": "checkout-service",
+                "failure_class": "deploy-regression/memory",
+                "summary": "Deploy raised DB connection pool max_size 20 -> "
+                           "200; OOMKilled cascade breached p99; rollback "
+                           "verified",
+                "remediation": ["rollback_deployment", "create_revert_pr"],
+                "verified": True})
 
     def lock_for(self, incident_id: str) -> threading.Lock:
         with self.state_lock:
@@ -259,7 +266,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "status": "ok", "service": "aetherops",
                 "version": __version__,
-                "backends": os.environ.get("AETHEROPS_BACKENDS", "offline")})
+                "backends": os.environ.get("AETHEROPS_BACKENDS", "offline"),
+                "persistence": "sqlite" if STATE.db_path else "in-memory",
+                "episodes": len(STATE.memory)})
         if not self._require("read"):
             return
         if parsed.path == "/v1/evals":
@@ -326,6 +335,12 @@ class Handler(BaseHTTPRequestHandler):
                                      "retry shortly"})
                     STATE.async_inflight += 1
             incident, env = build_demo_environment()
+            if STATE.db_path:
+                # Persistence mode: incidents read AND write the shared,
+                # durable organizational memory, so the learning flywheel
+                # spans requests and survives a restart (Phase K). Default
+                # mode keeps each incident's memory isolated (test-stable).
+                env["memory"] = STATE.memory
             entry = {"incident": incident, "env": env, "run": None,
                      "ctx": None, "fence": uuid.uuid4().hex,
                      "phase": "RUNNING"}
@@ -413,7 +428,7 @@ class Handler(BaseHTTPRequestHandler):
             audit = AuditLog()
             run, ctx = run_change_risk(
                 change, gateway=ModelGateway(audit=audit), audit=audit,
-                memory=STATE.change_memory, policy=PolicyEngine(),
+                memory=STATE.memory, policy=PolicyEngine(),
                 graph=default_graph())
             verdict = run.checkpoint.get("score", {})
             decision = run.checkpoint.get("policy_check", {})

@@ -213,5 +213,46 @@ class TestApi(unittest.TestCase):
                             for hit in body["results"]))
 
 
+class TestPersistence(unittest.TestCase):
+    """Phase K: with AETHEROPS_DB set, organizational memory is durable —
+    incidents write learned episodes to a shared store that survives a
+    restart and feeds change-risk scoring (the flywheel)."""
+
+    def test_learning_persists_across_restart(self):
+        import os
+        import tempfile
+
+        from aetherops.demo import build_demo_environment
+        from aetherops.workflows.incident_remediation import \
+            run_incident_remediation
+
+        with tempfile.TemporaryDirectory() as directory:
+            os.environ["AETHEROPS_DB"] = os.path.join(directory, "aether.db")
+            try:
+                state = api_server.AppState()
+                self.assertEqual(state.db_path,
+                                 os.environ["AETHEROPS_DB"])
+                self.assertEqual(len(state.memory), 1)          # seeded once
+
+                incident, env = build_demo_environment()
+                env["memory"] = state.memory                    # shared/durable
+                paused, ctx = run_incident_remediation(incident, **env)
+                run_incident_remediation(
+                    incident, **env, ctx=ctx,
+                    approvals={paused.pending_gate: True},
+                    checkpoint=paused.checkpoint)
+                self.assertEqual(len(state.memory), 2)          # learned + seed
+
+                restarted = api_server.AppState()               # new process
+                self.assertEqual(len(restarted.memory), 2)      # durable
+            finally:
+                os.environ.pop("AETHEROPS_DB", None)
+
+    def test_default_mode_is_in_memory(self):
+        state = api_server.AppState()
+        self.assertIsNone(state.db_path)
+        self.assertEqual(len(state.memory), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
