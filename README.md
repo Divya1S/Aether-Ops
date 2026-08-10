@@ -19,6 +19,22 @@ compensable (saga undo), and recorded in a hash-chained audit ledger. Every
 claim carries citations to real artifacts — commits, metrics, K8s events,
 past incidents — or the system says "insufficient evidence" and escalates.
 
+**[▶ Try the live console](https://divya1s.github.io/Aether-Ops/)** — trigger an
+incident, watch the agents diagnose from cited evidence, and approve the
+rollback at the policy gate (recorded transcript; runs with no backend).
+
+## Highlights
+
+- **Deterministic control plane, autonomous agents.** A workflow engine drives specialized LLM agents through *gather → diagnose → plan → gate → execute → verify → learn*, with a bounded tool-use loop, saga-based compensation, and human-in-the-loop approval — autonomy of investigation and proposal, never of execution.
+- **Evidence-grounded, or it escalates.** Every causal claim cites a real artifact (commit, metric, K8s event, prior incident); with no change correlating to the symptom the platform returns "insufficient evidence" and escalates rather than guessing — enforced by adversarial golden scenarios that must *escalate*, not remediate.
+- **Measured, not asserted.** Retrieval scored (precision@1 / recall@5 / MRR with bootstrap 95% CIs), an LLM-as-judge with a *deterministic* citation-faithfulness anchor that overrides it, and a golden-scenario release gate wired into CI — 224 automated tests over a zero-dependency stdlib core.
+- **Production LLMOps.** A governed model gateway with an ordered fallback chain (Anthropic API → local Ollama → deterministic offline) metering latency/tokens/cost per call, LangSmith tracing, a versioned + checksummed prompt registry, OWASP-LLM-Top-10 controls, and a hash-chained audit ledger.
+- **Runs as a product.** FastAPI + stdlib REST surfaces, an MCP server, a React 19 + TypeScript operator console, Docker, and SQLite persistence — with optional ChromaDB/pgvector retrieval, LangGraph orchestration, and a LoRA/PEFT fine-tuning pipeline.
+
+## Stack
+
+`Python` · `TypeScript / React 19` · `FastAPI` · `LangGraph` · `RAG (hybrid retrieval)` · `ChromaDB` · `pgvector` · `LangSmith` · `Hugging Face Transformers / PEFT (LoRA)` · `Ollama` · `Anthropic API` · `MCP` · `Docker` · `SQLite` · `GitHub Actions`
+
 ## Run it (zero dependencies)
 
 ```bash
