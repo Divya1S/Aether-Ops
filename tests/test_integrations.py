@@ -41,5 +41,48 @@ class TestLangGraphWorkflow(unittest.TestCase):
         self.assertEqual(state["status"], "denied")
 
 
+@unittest.skipUnless(_has("fastapi"), "api extra (fastapi) not installed")
+class TestFastAPISurface(unittest.TestCase):
+    """The same incident lifecycle exposed as an idiomatic FastAPI app."""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+
+        from aetherops.integrations.fastapi_app import app
+        self.client = TestClient(app)
+        self.auth = {"Authorization": "Bearer aetherops-dev"}
+
+    def test_health_reports_fastapi_surface(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["surface"], "fastapi")
+
+    def test_incident_lifecycle_over_fastapi(self):
+        created = self.client.post("/v1/incidents", json={}, headers=self.auth)
+        self.assertEqual(created.status_code, 201)
+        body = created.json()
+        self.assertEqual(body["status"], "PAUSED")
+        self.assertEqual(body["diagnosis"]["suspect_commit"], "c9a1f42")
+        resolved = self.client.post(
+            f"/v1/incidents/{body['incident_id']}/approvals",
+            json={"decision": "approve", "fence": body["fence"]},
+            headers=self.auth)
+        self.assertEqual(resolved.status_code, 200)
+        self.assertEqual(resolved.json()["status"], "SUCCEEDED")
+
+    def test_scenario_selection_and_400(self):
+        cert = self.client.post("/v1/incidents", json={"scenario": "s4-cert-expiry"},
+                                headers=self.auth)
+        self.assertEqual(cert.json()["diagnosis"]["failure_class"],
+                         "cert-expiry/tls")
+        bad = self.client.post("/v1/incidents", json={"scenario": "nope"},
+                               headers=self.auth)
+        self.assertEqual(bad.status_code, 400)
+
+    def test_auth_is_required(self):
+        self.assertEqual(
+            self.client.post("/v1/incidents", json={}).status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()
