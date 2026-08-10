@@ -7,7 +7,12 @@ COPY pyproject.toml README.md ./
 
 ENV PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    AETHEROPS_BIND=0.0.0.0
+
+# A container that publishes a port must be given a real token at run time
+# (AETHEROPS_API_TOKEN): the server refuses to boot on a non-loopback bind
+# with the built-in dev token. See api/server.py:_preflight.
 
 EXPOSE 8080
 

@@ -11,9 +11,12 @@ Endpoints (JSON in/out):
   GET  /v1/evals                        auth — golden + retrieval metrics
   GET  /v1/runbooks/search?q=...        auth — attributed RAG search
 
-Auth: `Authorization: Bearer $AETHEROPS_API_TOKEN` (default: aetherops-dev
-— set a real token in any non-local deployment). Mutations are impossible
-without it (docs/17 acceptance #14).
+Auth: `Authorization: Bearer $AETHEROPS_API_TOKEN`. The server refuses to
+boot without a real token unless AETHEROPS_ALLOW_DEV_TOKEN=1 is set, and the
+built-in dev token is only ever served on loopback (see `_preflight`). It
+binds 127.0.0.1 by default; AETHEROPS_BIND selects another interface but
+then requires a real token. Mutations are impossible without a valid bearer
+token (docs/17 acceptance #14).
 """
 from __future__ import annotations
 
@@ -48,8 +51,10 @@ from aetherops.workflows.incident_remediation import run_incident_remediation
 def _tokens() -> dict[str, str]:
     """Token → role registry (docs/05 §2). The primary token is admin for
     back-compatibility; scoped tokens are opt-in via environment."""
-    registry = {os.environ.get("AETHEROPS_API_TOKEN",
-                               "aetherops-dev"): "admin"}
+    # `or` (not a default arg) so an explicitly-empty env value can't register
+    # "" as a valid admin token; _preflight governs whether the dev token boots.
+    registry = {(os.environ.get("AETHEROPS_API_TOKEN") or "aetherops-dev"):
+                "admin"}
     for env_var, role in (("AETHEROPS_VIEWER_TOKEN", "viewer"),
                           ("AETHEROPS_OPERATOR_TOKEN", "operator"),
                           ("AETHEROPS_APPROVER_TOKEN", "approver")):
@@ -354,8 +359,35 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "unknown route"})
 
 
+def _preflight(env: dict) -> str:
+    """Resolve the bind address and enforce the credential policy BEFORE the
+    socket opens (audit C1). Returns the bind host; raises SystemExit on an
+    unsafe combination. Layered rule:
+      - a real AETHEROPS_API_TOKEN may bind anywhere;
+      - the built-in dev token requires an explicit AETHEROPS_ALLOW_DEV_TOKEN=1
+        opt-in AND a loopback bind — it is never exposed on a public interface;
+      - no token and no opt-in refuses to boot rather than register a
+        publicly-known admin credential silently.
+    """
+    bind = env.get("AETHEROPS_BIND", "127.0.0.1")   # loopback by default
+    if env.get("AETHEROPS_API_TOKEN"):
+        return bind
+    if env.get("AETHEROPS_ALLOW_DEV_TOKEN") != "1":
+        raise SystemExit(
+            "AetherOps refuses to boot: AETHEROPS_API_TOKEN is unset. Set a "
+            "real token, or export AETHEROPS_ALLOW_DEV_TOKEN=1 to run with the "
+            "insecure built-in dev token on loopback only.")
+    if bind not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit(
+            f"AetherOps refuses to boot: the built-in dev token must not be "
+            f"exposed on {bind!r}. Set AETHEROPS_API_TOKEN to a real token to "
+            f"bind a non-loopback address.")
+    return bind
+
+
 def serve(port: int = 8080):
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(json.dumps({"listening": port, "health": "/health",
+    bind = _preflight(os.environ)
+    server = ThreadingHTTPServer((bind, port), Handler)
+    print(json.dumps({"listening": port, "bind": bind, "health": "/health",
                       "auth": "Authorization: Bearer $AETHEROPS_API_TOKEN"}))
     server.serve_forever()

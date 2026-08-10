@@ -22,6 +22,37 @@ def _request(port, path, method="GET", body=None, token=TOKEN):
         return resp.status, json.loads(resp.read().decode())
 
 
+class TestServePreflight(unittest.TestCase):
+    """Boot-time credential policy (audit C1). `serve()` must never register a
+    publicly-known admin token silently, and never expose the dev token off
+    loopback."""
+
+    def test_no_token_no_optin_refuses_to_boot(self):
+        with self.assertRaises(SystemExit):
+            api_server._preflight({})
+
+    def test_dev_optin_binds_loopback(self):
+        self.assertEqual(
+            api_server._preflight({"AETHEROPS_ALLOW_DEV_TOKEN": "1"}),
+            "127.0.0.1")
+
+    def test_dev_token_refused_on_public_interface(self):
+        with self.assertRaises(SystemExit):
+            api_server._preflight({"AETHEROPS_ALLOW_DEV_TOKEN": "1",
+                                   "AETHEROPS_BIND": "0.0.0.0"})
+
+    def test_real_token_binds_anywhere(self):
+        self.assertEqual(
+            api_server._preflight({"AETHEROPS_API_TOKEN": "s3cret",
+                                   "AETHEROPS_BIND": "0.0.0.0"}),
+            "0.0.0.0")
+
+    def test_real_token_defaults_to_loopback(self):
+        self.assertEqual(
+            api_server._preflight({"AETHEROPS_API_TOKEN": "s3cret"}),
+            "127.0.0.1")
+
+
 class TestApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

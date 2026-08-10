@@ -84,8 +84,16 @@ can run asynchronously (`{"async": true}` → 202 + poll).
 
 ```bash
 make serve        # authenticated REST API + web UI (stdlib) on :8080
-make docker       # or: docker compose up — same API, containerized
+make docker       # build the image; run with a token (see below)
 ```
+
+The server is **secure by default**: it binds loopback and *refuses to boot*
+without a real `AETHEROPS_API_TOKEN` unless you explicitly opt into the
+built-in dev token (`AETHEROPS_ALLOW_DEV_TOKEN=1`, which `make serve` sets for
+local use), and it will never serve that dev token on a non-loopback
+interface. A container that publishes a port must therefore be given a real
+token: `docker run --rm -p 8080:8080 -e AETHEROPS_API_TOKEN=choose-a-token
+aetherops:latest`.
 
 Open `http://localhost:8080/` and you get a real **operator console** (one
 self-contained HTML file served by the API — no build step, no npm, no

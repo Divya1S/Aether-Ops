@@ -29,11 +29,11 @@ demo-live:
 	$(PY) -m aetherops --approve --live
 
 serve:
-	$(PY) -m aetherops.api
+	AETHEROPS_ALLOW_DEV_TOKEN=1 $(PY) -m aetherops.api
 
 docker:
 	docker build -t aetherops:latest .
-	@echo "run: docker run --rm -p 8080:8080 aetherops:latest"
+	@echo "run: docker run --rm -p 8080:8080 -e AETHEROPS_API_TOKEN=choose-a-token aetherops:latest"
 
 test:
 	$(PY) -m unittest discover -s tests -v
