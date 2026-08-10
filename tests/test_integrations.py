@@ -1,8 +1,8 @@
-"""Optional framework integrations (LangGraph, FastAPI, vector stores, RAGAS).
+"""Optional framework integrations (LangGraph, FastAPI, vector stores, LangSmith).
 
 Each test SKIPS when its extra isn't installed, so the stdlib core stays the
 default and CI (which installs no extras) stays green and network-free. Run
-locally after `pip install "aetherops[langgraph,api,vectorstores]"`.
+locally after `pip install "aetherops[langgraph,api,vectorstores,tracing]"`.
 """
 import importlib.util
 import os
@@ -113,6 +113,38 @@ class TestPgVectorStore(unittest.TestCase):
         store = PgVectorStore()
         self.assertIn("runbook-rollback",
                       store.search_docs("roll back a bad deploy", k=3))
+
+
+@unittest.skipUnless(_has("langsmith"), "tracing extra (langsmith) not installed")
+class TestLangSmithTracing(unittest.TestCase):
+    """LangSmith tracing instruments the gateway transparently (no network
+    unless LANGCHAIN_TRACING_V2 is set)."""
+
+    def test_tracing_is_transparent_to_completions(self):
+        from aetherops.gateway.model_gateway import (ModelGateway,
+                                                     OfflineHeuristicBackend,
+                                                     TaskProfile)
+        from aetherops.integrations.langsmith_tracing import trace_gateway
+        gateway = ModelGateway(backend=OfflineHeuristicBackend())
+        self.assertIs(trace_gateway(gateway), gateway)   # returns the gateway
+        trace_gateway(gateway)                            # idempotent
+        response = gateway.complete("why did the pods OOM",
+                                    TaskProfile(task="root_cause"))
+        self.assertEqual(response.tier, "standard")
+        self.assertGreater(response.tokens, 0)
+
+    def test_instrumented_gateway_runs_a_full_incident(self):
+        from aetherops.evals.scenarios import build_environment, canonical
+        from aetherops.integrations.langsmith_tracing import trace_gateway
+        from aetherops.workflows.incident_remediation import \
+            run_incident_remediation
+        incident, env = build_environment(canonical())
+        trace_gateway(env["gateway"])
+        run, ctx = run_incident_remediation(incident, **env)
+        self.assertEqual(run.status.value, "PAUSED")
+        self.assertEqual(
+            ctx.results.get("root_cause").output.get("failure_class"),
+            "deploy-regression/memory")
 
 
 if __name__ == "__main__":

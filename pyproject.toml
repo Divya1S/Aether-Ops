@@ -22,7 +22,7 @@ llm = ["anthropic>=0.40"]          # production ModelGateway backend
 api = ["fastapi>=0.110", "uvicorn>=0.29"]           # FastAPI surface
 langgraph = ["langgraph>=0.2"]                      # LangGraph orchestration
 vectorstores = ["chromadb>=0.5"]                    # real vector store for RAG
-ragas = ["ragas>=0.2", "datasets>=2.0"]             # RAG evaluation
+tracing = ["langsmith>=0.1"]                        # LangSmith gateway tracing
 finetune = ["peft>=0.11", "transformers>=4.40", "trl>=0.9", "torch>=2.0",
             "datasets>=2.0"]                        # LoRA/SFT fine-tuning
 
