@@ -1,6 +1,7 @@
 """Redaction patterns and audit hash-chain integrity."""
 import unittest
 
+from aetherops.connectors.fakes import FakeGitHub, Snapshot
 from aetherops.security.audit import AuditLog
 from aetherops.security.redaction import redact_text, redact_value
 
@@ -20,10 +21,48 @@ class TestRedaction(unittest.TestCase):
             self.assertIn(label, findings, text)
             self.assertIn(f"[REDACTED:{label}]", clean)
 
+    def test_underscore_prefixed_credential_keys_are_redacted(self):
+        # audit H2: the common real-world key names \b would have missed.
+        for text in ("github_token=ghp_AAAABBBBCCCCDDDD1234EEEE",
+                     "db_password=hunter2", "client_secret=s3cr3tvalue",
+                     "refresh_token=1//xEoXlongtokenvalue",
+                     "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENG"):
+            clean, findings = redact_text(text)
+            self.assertTrue(findings, f"leaked: {text}")
+            self.assertNotIn(text.split("=", 1)[1], clean)
+
+    def test_vendor_token_shapes_are_redacted(self):
+        for text, label in (("ghp_AAAABBBBCCCCDDDD1234EEEE", "github-pat"),
+                            ("eyJhbGciOiJIUzI1NiIs.eyJzdWIiOiIxMjM0.SflKxwRJSMe",
+                             "jwt")):
+            _, findings = redact_text(text)
+            self.assertIn(label, findings)
+
     def test_clean_text_untouched(self):
         clean, findings = redact_text("p99 latency rose to 2400ms at 14:05")
         self.assertEqual(findings, [])
         self.assertEqual(clean, "p99 latency rose to 2400ms at 14:05")
+
+    def test_no_false_positives_on_ordinary_words(self):
+        # "monkey=", "turnkey", "token of ..." must not trip the key=value rule.
+        for text in ("monkey=5", "the donkey= brown", "turnkey solution",
+                     "a token of appreciation", "status: ok"):
+            _, findings = redact_text(text)
+            self.assertEqual(findings, [], f"false positive on {text!r}")
+
+
+class TestToolArgRedaction(unittest.TestCase):
+    def test_secret_in_tool_args_is_not_logged_in_clear(self):
+        # audit M1: a secret passed as a tool argument must be redacted before
+        # it lands in the audit ledger.
+        audit = AuditLog()
+        gh = FakeGitHub(audit=audit, snapshot=Snapshot())
+        gh.call("get_commit_diff",
+                {"sha": "c9a1f42", "api_key": "dd-supersecret123"},
+                principal="reviewer")
+        call = next(r for r in audit.records if r.action == "tool.call")
+        self.assertNotIn("dd-supersecret123", str(call.payload["args"]))
+        self.assertIn("credential-kv", call.payload["redactions"])
 
     def test_nested_structures_are_redacted(self):
         value = {"series": [{"note": "api_key=abc123secret"}],

@@ -132,12 +132,17 @@ class Connector:
     def _log(self, tool: str, principal: str, spec: ToolSpec, args: dict,
              cached: bool, redactions: list | None = None) -> None:
         if self._audit is not None:
+            # Redact the ARGS too (audit M1): a secret passed as a tool
+            # argument must not land in the ledger in cleartext, or the
+            # redaction guarantee is only half kept.
+            clean_args, arg_findings = redact_value(args)
             self._audit.append(
                 actor=principal,
                 action="tool.call",
                 payload={"system": self.system, "tool": tool,
                          "risk": spec.risk.name, "cached": cached,
-                         "args": args, "redactions": redactions or []})
+                         "args": clean_args,
+                         "redactions": (redactions or []) + arg_findings})
 
 
 class ConnectorRegistry:
