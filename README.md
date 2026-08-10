@@ -147,8 +147,15 @@ gate semantics and returns the generated postmortem;
 `GET /v1/incidents/{id}/audit` returns that incident's hash-chained ledger
 with its live verification status, so the governance trail is *reachable*,
 not just written; `/v1/changes/score`, `/v1/evals`, and
-`/v1/runbooks/search` expose the rest. Each request emits a structured
-access log (status, role, correlation id = incident id, latency). Every mutating
+`/v1/runbooks/search` expose the rest. `GET /v1/connectors` reports which
+integration slot is served by a **real HTTP adapter** vs a fake: the
+connectors are genuinely pluggable — a real GitHub adapter (deployments +
+commit diffs from the free API; writes are dry-run, side-effect-free) and a
+real Prometheus adapter (the metrics slot) ship in `connectors/adapters.py`,
+opt-in via `AETHEROPS_GITHUB_REPO` / `AETHEROPS_PROMETHEUS_URL` and
+unit-tested against mocked HTTP; the fakes remain the default so demos, evals,
+and CI stay network-free. Each request emits a structured access log (status,
+role, correlation id = incident id, latency). Every mutating
 endpoint requires `Authorization: Bearer $AETHEROPS_API_TOKEN`. State can
 persist across restarts: set **`AETHEROPS_DB`** and the API's organizational
 memory becomes SQLite-backed, so every incident's learned episode is durable

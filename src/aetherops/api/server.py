@@ -39,6 +39,7 @@ from aetherops import __version__
 from aetherops.core.types import ChangeEvent, WorkflowStatus, new_id
 from aetherops.demo import build_demo_environment
 from aetherops.evals.harness import run_all
+from aetherops.connectors.adapters import connector_roster
 from aetherops.evals.scenarios import all_scenarios, build_environment
 from aetherops.evals.retrieval import run_retrieval_eval
 from aetherops.gateway.model_gateway import ModelGateway
@@ -286,6 +287,10 @@ class Handler(BaseHTTPRequestHandler):
                 "trust_ladder": report["trust_ladder"],
                 "release_gate": report["release_gate"],
                 "retrieval": run_retrieval_eval()})
+        if parsed.path == "/v1/connectors":
+            # Which integration slot is served by a REAL adapter vs a fake,
+            # per current env config (Phase Q). Default: all fakes.
+            return self._send(200, {"connectors": connector_roster()})
         if parsed.path == "/v1/scenarios":
             # The API can run any golden scenario, not just the canonical one
             # (Phase P): the console offers these; the adversarial ones

@@ -9,6 +9,19 @@ invoke writes through it. Security properties of this boundary are specified
 in [05-security.md](05-security.md); failure behavior in
 [11-failure-handling.md](11-failure-handling.md).
 
+> **Reference implementation.** The default connectors serve a frozen
+> `Snapshot` (deterministic demos/evals). But the connector interface is a
+> real seam, not a mock-only one: `connectors/adapters.py` ships **real HTTP
+> adapters** — `GitHubConnector` (deployments + commit diffs over the free
+> GitHub REST API; the two write tools are dry-run so it never mutates a repo)
+> and `PrometheusConnector` (the metrics slot, mapping a range query to the
+> agents' series shape). `build_live_registry` swaps them in where env-
+> configured (`AETHEROPS_GITHUB_REPO`, `AETHEROPS_PROMETHEUS_URL`) and falls
+> back to the fakes otherwise; `GET /v1/connectors` reports the roster. Real
+> calls still cross the same gateway (rate-limit → cache → redact → audit),
+> and the adapters are unit-tested against mocked HTTP so CI stays
+> network-free.
+
 ---
 
 ## 1. Connector abstraction
