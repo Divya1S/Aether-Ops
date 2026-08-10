@@ -10,7 +10,8 @@ import argparse
 import json
 
 from aetherops.evals.harness import run_all
-from aetherops.evals.retrieval import run_retrieval_eval
+from aetherops.evals.retrieval import (run_retrieval_eval,
+                                       run_semantic_retrieval_eval)
 
 RULE = "─" * 72
 
@@ -65,8 +66,28 @@ def main() -> int:
         print(f"    {name:<10} chunks={metrics['chunks']:<3} "
               f"P@1={metrics['precision_at_1']:.3f} "
               f"CI95=[{ci[0]:.3f},{ci[1]:.3f}]  "
-              f"R@5={metrics['recall_at_5']:.3f}  "
+              f"paraphrase_P@1={metrics['paraphrase_precision_at_1']:.3f}  "
               f"MRR={metrics['mrr']:.3f}{marker}")
+
+    if args.live:
+        semantic = run_semantic_retrieval_eval()
+        print(f"\n{RULE}\nSemantic retrieval track — free local embeddings "
+              f"(reported, never gated)\n{RULE}")
+        if semantic["available"]:
+            base = max(m["paraphrase_precision_at_1"]
+                       for m in retrieval["strategies"].values())
+            for name, m in semantic["strategies"].items():
+                print(f"    {name:<10} embedder={m['embedder']:<7} "
+                      f"P@1={m['precision_at_1']:.3f}  "
+                      f"paraphrase_P@1={m['paraphrase_precision_at_1']:.3f}")
+            best_sem = max(m["paraphrase_precision_at_1"]
+                           for m in semantic["strategies"].values())
+            print(f"    paraphrase lift vs TF-IDF: {base:.3f} -> "
+                  f"{best_sem:.3f} (semantic embeddings reach synonyms a "
+                  f"lexical retriever cannot)")
+        else:
+            print(f"    unavailable ({semantic['reason']}) — run "
+                  f"`ollama pull nomic-embed-text` to enable")
 
     if args.live:
         print(f"\n{RULE}\nLive-model track (ollama backend; reported, "

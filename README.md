@@ -47,7 +47,12 @@ that a lexical retriever is *expected* to miss) — precision@1/precision@5/
 recall@5/MRR per chunking strategy, with a **bootstrap 95% CI** on
 precision@1. CI is gated on the interval's **lower bound**, not the point
 estimate, so a regression has to move the whole interval rather than hide in
-small-sample noise. Golden-scenario metrics are honest about their scale: n=7
+small-sample noise. A **free local semantic embedder** (Ollama
+`nomic-embed-text`) is reported opt-in via `make eval-live` and *never gated*
+— it lifts the paraphrase subset's precision@1 from ~0 to ~0.5 (reaching
+synonyms like "ran out of RAM" → OOM that lexical retrieval can't), and skips
+cleanly when Ollama isn't installed, so the deterministic gate stays
+network-free. Golden-scenario metrics are honest about their scale: n=7
 self-authored scenarios — two diagnosable failure classes (deploy
 regression, certificate expiry), a must-escalate case, and **three
 adversarial grounding cases** the pipeline must *escalate* rather than

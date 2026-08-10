@@ -90,3 +90,8 @@ LABELED_QUERIES: list[tuple[str, list[str]]] = [
     ("hand the incident to a person when the bot isn't sure",
      ["runbook-escalation"]),
 ]
+
+# The final PARAPHRASE_COUNT queries are the vocabulary-divergent subset — the
+# generalization test a lexical retriever is expected to struggle with and a
+# semantic embedder should lift (evals/retrieval.py reports both).
+PARAPHRASE_COUNT = 6

@@ -6,7 +6,8 @@ import unittest
 from aetherops.core.types import WorkflowStatus
 from aetherops.demo import build_demo_environment
 from aetherops.evals.retrieval import (RETRIEVAL_PRECISION_GATE,
-                                       run_retrieval_eval)
+                                       run_retrieval_eval,
+                                       run_semantic_retrieval_eval)
 from aetherops.rag.chunking import chunk_fixed, chunk_paragraph, get_chunker
 from aetherops.rag.corpus import SEED_RUNBOOKS, Document
 from aetherops.rag.embeddings import TfidfEmbedder, dot, get_embedder
@@ -140,6 +141,22 @@ class TestRetrievalEval(unittest.TestCase):
         self.assertEqual(
             self.report["strategies"]["fixed"]["precision_at_1_ci95"],
             again["strategies"]["fixed"]["precision_at_1_ci95"])
+
+    def test_semantic_track_lifts_paraphrases_when_available(self):
+        # Phase L: the free local semantic embedder should reach paraphrase
+        # queries a lexical retriever cannot. Reported, never gated — so this
+        # skips cleanly in CI (no Ollama) rather than failing.
+        semantic = run_semantic_retrieval_eval()
+        if not semantic["available"]:
+            self.skipTest(f"semantic embedder unavailable: "
+                          f"{semantic['reason']}")
+        base = max(m["paraphrase_precision_at_1"]
+                   for m in self.report["strategies"].values())
+        best = max(m["paraphrase_precision_at_1"]
+                   for m in semantic["strategies"].values())
+        self.assertGreaterEqual(best, base)          # never worse, usually more
+        # The gate stays on the deterministic TF-IDF track, not the embedder.
+        self.assertNotIn("ollama", str(self.report["gate"]))
 
 
 class TestWorkflowIntegration(unittest.TestCase):
