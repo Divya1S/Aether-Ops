@@ -33,6 +33,7 @@ from urllib.parse import parse_qs, urlparse
 
 MAX_BODY_BYTES = 64 * 1024          # request bodies are small JSON by design
 MAX_INCIDENTS_RETAINED = 200        # oldest resolved entries evicted first
+MAX_ASYNC_INFLIGHT = 16             # backpressure: reject async beyond this
 
 from aetherops import __version__
 from aetherops.core.types import ChangeEvent, WorkflowStatus, new_id
@@ -76,6 +77,7 @@ class AppState:
         self.locks: dict[str, threading.Lock] = {}
         self.state_lock = threading.Lock()
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        self.async_inflight = 0     # guarded by state_lock (backpressure)
         # Change-risk scoring reads organizational memory: seed the canonical
         # learned episode so risk differentiation (the flywheel) is visible —
         # the same prior `make demo-change` uses.
@@ -96,7 +98,10 @@ class AppState:
         with self.state_lock:
             while len(self.incidents) > MAX_INCIDENTS_RETAINED:
                 for key, entry in self.incidents.items():
-                    if entry["run"].status.value != "PAUSED":
+                    # A still-running (run is None) or PAUSED incident is
+                    # in-flight — never evict it mid-flight.
+                    run = entry["run"]
+                    if run is not None and run.status.value != "PAUSED":
                         self.incidents.pop(key)
                         self.locks.pop(key, None)
                         break
@@ -172,8 +177,11 @@ class Handler(BaseHTTPRequestHandler):
             return None
         presented = header[len("Bearer "):]
         for token, role in STATE.tokens.items():   # timing-safe comparison
-            if hmac.compare_digest(presented, token):
-                return role
+            try:
+                if hmac.compare_digest(presented, token):
+                    return role
+            except TypeError:           # non-ASCII bearer -> invalid, not 500
+                return None
         return None
 
     def _require(self, action: str) -> bool:
@@ -202,13 +210,19 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _body(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:              # malformed Content-Length -> no body
+            return {}
         if not length or length > MAX_BODY_BYTES:
             return {}
         try:
-            return json.loads(self.rfile.read(length).decode("utf-8"))
-        except json.JSONDecodeError:
+            parsed = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
+        # Callers do body.get(...); a non-object body (list/str/number) would
+        # otherwise 500. Coerce anything that isn't a dict to an empty body.
+        return parsed if isinstance(parsed, dict) else {}
 
     def _correlation_id(self) -> str:
         """The incident id doubles as the request correlation id, tying an
@@ -301,20 +315,36 @@ class Handler(BaseHTTPRequestHandler):
             if not self._require("create"):
                 return
             body = self._body()
+            is_async = bool(body.get("async"))
+            if is_async:
+                # Backpressure BEFORE doing any work, so a rejected request
+                # creates no entry to leak (audit M2).
+                with STATE.state_lock:
+                    if STATE.async_inflight >= MAX_ASYNC_INFLIGHT:
+                        return self._send(429, {
+                            "error": "too many incidents in flight; "
+                                     "retry shortly"})
+                    STATE.async_inflight += 1
             incident, env = build_demo_environment()
             entry = {"incident": incident, "env": env, "run": None,
                      "ctx": None, "fence": uuid.uuid4().hex,
                      "phase": "RUNNING"}
-            STATE.incidents[incident.id] = entry
+            with STATE.state_lock:          # insert atomic vs. evict (audit M3)
+                STATE.incidents[incident.id] = entry
             STATE.evict()
 
             def _execute():
-                run, ctx = run_incident_remediation(incident, **env)
-                with STATE.lock_for(incident.id):
-                    entry["run"], entry["ctx"] = run, ctx
-                    entry["phase"] = "READY"
+                try:
+                    run, ctx = run_incident_remediation(incident, **env)
+                    with STATE.lock_for(incident.id):
+                        entry["run"], entry["ctx"] = run, ctx
+                        entry["phase"] = "READY"
+                finally:
+                    if is_async:
+                        with STATE.state_lock:
+                            STATE.async_inflight -= 1
 
-            if body.get("async"):
+            if is_async:
                 STATE.pool.submit(_execute)     # 202 now, poll via GET
                 return self._send(202, {"incident_id": incident.id,
                                         "status": "RUNNING",
@@ -341,9 +371,12 @@ class Handler(BaseHTTPRequestHandler):
             # optional fence token (docs/12) rejects decisions made against
             # a stale view of the incident.
             with STATE.lock_for(incident_id):
-                if (body.get("fence") is not None
-                        and body["fence"] != entry["fence"]):
-                    return self._send(409, {"error": "stale fence token"})
+                # Fence is REQUIRED (audit M6): a decision must echo the
+                # current token, so an approval made against a stale view of
+                # the incident is rejected rather than silently accepted.
+                if body.get("fence") != entry["fence"]:
+                    return self._send(409, {"error": "missing or stale fence "
+                                            "token — re-read the incident"})
                 run = entry["run"]
                 if run is None:
                     return self._send(409, {"error": "incident still "
@@ -357,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
                     checkpoint=run.checkpoint)
                 entry["run"], entry["ctx"] = run, ctx
                 entry["fence"] = uuid.uuid4().hex
-            response = _incident_summary(entry)
+            response = {**_incident_summary(entry), "fence": entry["fence"]}
             postmortem = run.checkpoint.get("postmortem")
             if postmortem:
                 response["postmortem_excerpt"] = \

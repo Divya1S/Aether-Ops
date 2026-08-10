@@ -197,13 +197,13 @@ function renderIncident(d,resolved){
 async function decide(approve){
   $('#approve').disabled=$('#deny').disabled=true;
   if(!approve){
-    if(LIVE){try{await api(`/v1/incidents/${CURRENT.incident_id}/approvals`,'POST',{decision:'deny'});}catch(e){}}
+    if(LIVE){try{await api(`/v1/incidents/${CURRENT.incident_id}/approvals`,'POST',{decision:'deny',fence:CURRENT.fence});}catch(e){}}
     $('#incView').lastElementChild.querySelector('.gate').outerHTML=
       `<div class="gate" style="border-color:var(--red)"><b style="color:var(--red)">✕ Denied — escalated to a human. Nothing executed.</b></div>`;
     return;
   }
   let res;
-  if(LIVE){res=await api(`/v1/incidents/${CURRENT.incident_id}/approvals`,'POST',{decision:'approve'});}
+  if(LIVE){res=await api(`/v1/incidents/${CURRENT.incident_id}/approvals`,'POST',{decision:'approve',fence:CURRENT.fence});}
   else{await new Promise(r=>setTimeout(r,500));res=DEMO.resolved;}
   renderIncident({...CURRENT,...res},res);
 }

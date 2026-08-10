@@ -53,8 +53,9 @@ class TestApprovalAtomicity(unittest.TestCase):
 
         def approve():
             try:
-                status, _ = _request(self.port, path, method="POST",
-                                     body={"decision": "approve"})
+                status, _ = _request(
+                    self.port, path, method="POST",
+                    body={"decision": "approve", "fence": created["fence"]})
                 results.append(status)
             except urllib.error.HTTPError as err:
                 results.append(err.code)

@@ -141,7 +141,7 @@ class TestRoleGatedApi(unittest.TestCase):
         _, resolved = self._request(
             f"/v1/incidents/{created['incident_id']}/approvals",
             method="POST", token="approver-tok",
-            body={"decision": "approve"})
+            body={"decision": "approve", "fence": created["fence"]})
         self.assertEqual(resolved["status"], "SUCCEEDED")
 
     def test_unknown_token_is_401_not_403(self):

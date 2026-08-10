@@ -140,7 +140,8 @@ class TestApi(unittest.TestCase):
 
         status, resolved = _request(
             self.port, f"/v1/incidents/{incident_id}/approvals",
-            method="POST", body={"decision": "approve"})
+            method="POST",
+            body={"decision": "approve", "fence": created["fence"]})
         self.assertEqual(resolved["status"], "SUCCEEDED")
         self.assertIn("# Postmortem", resolved["postmortem_excerpt"])
         self.assertTrue(resolved["follow_ups"])
@@ -148,7 +149,8 @@ class TestApi(unittest.TestCase):
         # Gate semantics: a resolved incident cannot be re-approved
         with self.assertRaises(urllib.error.HTTPError) as caught:
             _request(self.port, f"/v1/incidents/{incident_id}/approvals",
-                     method="POST", body={"decision": "approve"})
+                     method="POST",
+                     body={"decision": "approve", "fence": resolved["fence"]})
         self.assertEqual(caught.exception.code, 409)
 
     def test_denial_over_http_never_executes(self):
@@ -156,10 +158,42 @@ class TestApi(unittest.TestCase):
                               body={})
         _, denied = _request(
             self.port, f"/v1/incidents/{created['incident_id']}/approvals",
-            method="POST", body={"decision": "deny"})
+            method="POST",
+            body={"decision": "deny", "fence": created["fence"]})
         self.assertEqual(denied["status"], "FAILED")
         self.assertIn("denied", denied["error"])
         self.assertNotIn("postmortem_excerpt", denied)
+
+    def test_approval_requires_a_fence(self):
+        # audit M6: a decision without the current fence is rejected.
+        _, created = _request(self.port, "/v1/incidents", method="POST",
+                              body={})
+        try:
+            _request(self.port,
+                     f"/v1/incidents/{created['incident_id']}/approvals",
+                     method="POST", body={"decision": "approve"})   # no fence
+            self.fail("expected 409")
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 409)
+
+    def test_non_object_body_does_not_500(self):
+        # audit L2: a JSON array/string body must be coerced, not crash.
+        status, _ = _request(self.port, "/v1/changes/score",
+                             method="POST", body=[])
+        self.assertEqual(status, 200)
+
+    def test_non_ascii_bearer_is_401_not_500(self):
+        # audit L2: a non-ASCII token must not raise inside compare_digest.
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/v1/evals",
+            headers={"Authorization": "Bearer café-token"})
+        try:
+            urllib.request.urlopen(request, timeout=30)
+            self.fail("expected 401")
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 401)
+        except (UnicodeEncodeError, UnicodeError):
+            self.skipTest("urllib rejects non-ASCII header client-side")
 
     def test_change_scoring_endpoint(self):
         _, scored = _request(
