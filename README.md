@@ -41,9 +41,13 @@ backend, so golden-scenario replay never depends on what's installed.
 postmortem guidance through a hybrid (keyword + vector) retriever with
 `rag://doc#offset` source attribution; chunking strategy and embedder are
 configuration (fixed vs. paragraph, stdlib TF-IDF vs. Ollama embeddings);
-and `make eval` scores retrieval against a hand-labeled query set (n=22,
-self-labeled) — precision@1/precision@5/recall@5/MRR per chunking strategy,
-gated in CI. Golden-scenario metrics are honest about their scale: n=7
+and `make eval` scores retrieval against a hand-labeled query set (n=36,
+self-labeled, including a deliberately vocabulary-divergent paraphrase subset
+that a lexical retriever is *expected* to miss) — precision@1/precision@5/
+recall@5/MRR per chunking strategy, with a **bootstrap 95% CI** on
+precision@1. CI is gated on the interval's **lower bound**, not the point
+estimate, so a regression has to move the whole interval rather than hide in
+small-sample noise. Golden-scenario metrics are honest about their scale: n=7
 self-authored scenarios — two diagnosable failure classes (deploy
 regression, certificate expiry), a must-escalate case, and **three
 adversarial grounding cases** the pipeline must *escalate* rather than

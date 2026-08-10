@@ -98,16 +98,31 @@ class TestRetrievalEval(unittest.TestCase):
         self.assertEqual(set(cls_r := self.report["strategies"]),
                          {"paragraph", "fixed"})
         for metrics in cls_r.values():
-            for key in ("precision_at_1", "precision_at_5", "recall_at_5",
-                        "mrr", "chunks", "queries"):
+            for key in ("precision_at_1", "precision_at_1_ci95",
+                        "precision_at_5", "recall_at_5", "mrr", "chunks",
+                        "queries"):
                 self.assertIn(key, metrics)
-            self.assertGreaterEqual(metrics["queries"], 20)
+            self.assertGreaterEqual(metrics["queries"], 30)
+            lo, hi = metrics["precision_at_1_ci95"]
+            self.assertLessEqual(lo, metrics["precision_at_1"])   # point in CI
+            self.assertLessEqual(metrics["precision_at_1"], hi)
 
-    def test_gate_passes_the_floor(self):
+    def test_gate_reads_the_ci_lower_bound(self):
+        # The gate must check the CI lower bound, not the point estimate
+        # (audit F6): stricter, and regression-sensitive on a small sample.
+        gate = self.report["gate"]
         best = self.report["strategies"][self.report["best"]]
-        self.assertGreaterEqual(best["precision_at_1"],
+        self.assertEqual(gate["ci_lower_bound"],
+                         best["precision_at_1_ci95"][0])
+        self.assertGreaterEqual(gate["ci_lower_bound"],
                                 RETRIEVAL_PRECISION_GATE)
-        self.assertTrue(self.report["gate"]["passed"])
+        self.assertTrue(gate["passed"])
+
+    def test_bootstrap_ci_is_deterministic(self):
+        again = run_retrieval_eval()
+        self.assertEqual(
+            self.report["strategies"]["fixed"]["precision_at_1_ci95"],
+            again["strategies"]["fixed"]["precision_at_1_ci95"])
 
 
 class TestWorkflowIntegration(unittest.TestCase):

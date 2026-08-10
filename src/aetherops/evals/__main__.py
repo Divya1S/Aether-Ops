@@ -61,9 +61,10 @@ def main() -> int:
           f"strategy)\n{RULE}")
     for name, metrics in retrieval["strategies"].items():
         marker = " ← best" if name == retrieval["best"] else ""
+        ci = metrics["precision_at_1_ci95"]
         print(f"    {name:<10} chunks={metrics['chunks']:<3} "
-              f"P@1={metrics['precision_at_1']:.3f}  "
-              f"P@5={metrics['precision_at_5']:.3f}  "
+              f"P@1={metrics['precision_at_1']:.3f} "
+              f"CI95=[{ci[0]:.3f},{ci[1]:.3f}]  "
               f"R@5={metrics['recall_at_5']:.3f}  "
               f"MRR={metrics['mrr']:.3f}{marker}")
 
