@@ -11,7 +11,7 @@ reverse if verification fails (saga).
 """
 from __future__ import annotations
 
-from aetherops.agents.base import PermanentError
+from aetherops.agents.base import PermanentError, RetryPolicy
 from aetherops.agents.knowledge import KnowledgeAgent
 from aetherops.agents.planner import PlannerAgent
 from aetherops.agents.reviewer import ReviewerAgent
@@ -24,6 +24,9 @@ from aetherops.core.schema import validate
 from aetherops.core.types import RiskLevel
 from aetherops.orchestration.dag import DagExecutor, DagRun, GateSpec, Node
 from aetherops.reporting.postmortem import build_postmortem
+
+
+WORKFLOW_DEADLINE_S = 1800      # backstop per run/resume invocation
 
 
 def _agent_node(agent):
@@ -75,22 +78,41 @@ def _policy_check(ctx):
 
 
 def _execute(ctx):
+    # Publish the accumulator to ctx BEFORE the loop so a mid-batch failure
+    # leaves the already-applied steps visible (audit C3). Combined with the
+    # node's max_attempts=1, no write is ever blindly replayed, and on a
+    # mid-batch failure we self-compensate rather than leaving prod half-
+    # remediated.
     executed = []
-    for step in ctx.results["planner"].output["steps"]:
-        result = ctx.connectors.call(step["system"], step["tool"],
-                                     step["args"], principal="executor")
-        executed.append({"action": step["action"], "result": result.data})
     ctx.params["executed"] = executed
+    for step in ctx.results["planner"].output["steps"]:
+        try:
+            result = ctx.connectors.call(step["system"], step["tool"],
+                                         step["args"], principal="executor")
+        except Exception:
+            _compensate_execute(ctx, {"executed": executed})   # undo, then escalate
+            raise
+        executed.append({"action": step["action"], "result": result.data})
     return {"executed": executed}
 
 
 def _compensate_execute(ctx, output):
-    """Saga: run each executed step's undo descriptor, most recent first."""
+    """Saga: run each executed step's undo descriptor, most recent first. A
+    single failed undo is audited and skipped, never aborting the rest
+    (audit C2). Steps with no undo (e.g. a rollback to a known-good revision)
+    are safe terminal states and are left in place."""
     for record in reversed(output.get("executed", [])):
-        undo = record["result"].get("undo")
-        if undo:
+        undo = record.get("result", {}).get("undo")
+        if not undo:
+            continue
+        try:
             ctx.connectors.call(undo["system"], undo["tool"], undo["args"],
                                 principal="compensator")
+        except Exception as exc:
+            if ctx.audit is not None:
+                ctx.audit.append(
+                    actor="compensator", action="compensation.step_failed",
+                    payload={"tool": undo.get("tool"), "error": str(exc)})
 
 
 def _learn(ctx):
@@ -127,7 +149,7 @@ def _postmortem(ctx):
 
 def build_workflow() -> list[Node]:
     return [
-        Node("triage", _agent_node(TriageAgent())),
+        Node("triage", _agent_node(TriageAgent()), timeout_s=60),
         Node("gather_evidence", _agent_node(KnowledgeAgent()),
              deps=("triage",), timeout_s=600),
         Node("security_screen", _agent_node(SecurityAgent()),
@@ -145,9 +167,15 @@ def build_workflow() -> list[Node]:
                  reason="execute remediation against prod",
                  needed=lambda cp: cp.get("policy_check", {})
                                      .get("requires_approval", True))),
+        # max_attempts=1: a partially-applied batch must never be blindly
+        # replayed (audit C3); timeout bounds a hung connector (audit #4) — a
+        # timed-out write escalates for manual review (it cannot be cancelled
+        # in-process).
         Node("execute", _execute, deps=("approval_gate",),
-             compensate=_compensate_execute),
-        Node("verify", _agent_node(VerifierAgent()), deps=("execute",)),
+             compensate=_compensate_execute,
+             retry=RetryPolicy(max_attempts=1), timeout_s=300),
+        Node("verify", _agent_node(VerifierAgent()), deps=("execute",),
+             timeout_s=120),
         Node("learn", _learn, deps=("verify",)),
         Node("postmortem", _postmortem, deps=("learn",)),
     ]
@@ -170,7 +198,12 @@ def run_incident_remediation(incident, *, connectors, gateway, audit, memory,
             audit.append(actor="control-plane", action="workflow.start",
                          payload={"workflow": "incident_remediation",
                                   "trace": incident.id})
+    # Per-invocation wall-clock backstop (audit #4): bounds one run/resume so a
+    # hung node can never block a caller (or an API pool thread) forever. It is
+    # deliberately per-invocation — the long human wait at the approval gate is
+    # a separate PAUSED invocation and must not count against execution time.
     executor = DagExecutor(build_workflow(), audit=audit,
-                           sleeper=lambda seconds: None)
+                           sleeper=lambda seconds: None,
+                           deadline_s=WORKFLOW_DEADLINE_S)
     run = executor.execute(ctx, approvals=approvals, checkpoint=checkpoint)
     return run, ctx

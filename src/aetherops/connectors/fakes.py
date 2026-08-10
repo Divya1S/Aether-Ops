@@ -240,9 +240,11 @@ class FakeKubernetes(SnapshotConnector):
                 "service": service,
                 "rolled_back_to": revision,
                 "dry_run": args.get("dry_run", True),
-                "undo": {"system": "kubernetes", "tool": "rollback_deployment",
-                         "args": {"service": service,
-                                  "revision": snap.revision}},
+                # No undo descriptor (audit C2): a rollback to a known-good
+                # revision is the safe terminal state. Auto-"undoing" it would
+                # redeploy the bad revision — the opposite of safe. If a later
+                # saga step fails, the platform leaves the service rolled back
+                # and escalates to a human rather than reintroducing the fault.
             }
             return ToolResult(data, self.cite(
                 f"k8s://prod/{service}/rollout",

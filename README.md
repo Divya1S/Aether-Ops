@@ -83,10 +83,16 @@ security controls are mapped to the OWASP LLM Top 10 (2025) in
 the suite.
 
 **Reliability is mechanism, not intention:** every workflow node carries a
-wall-clock budget (a timed-out attempt is a retryable failure, audited
-`node.timeout`) with an optional workflow-level deadline that escalates
-with partial findings; semantic retries roll back the failed attempt's
-side effects before re-running; and the API's approval endpoint is atomic —
+wall-clock budget, and because an in-process worker cannot be cancelled, a
+timed-out node *escalates* rather than retrying — retrying would race a
+second attempt against shared state (audited `node.timeout`); a wired
+per-invocation deadline backstops the whole run. Execution is single-attempt
+and **self-compensating**: a partially-applied batch undoes itself rather
+than being blindly replayed, so no write is double-applied or left
+un-undone. The saga can genuinely undo MEDIUM+ writes (a dedicated
+`compensator` principal the write-guard authorizes), and a rollback to a
+known-good revision is a **safe terminal state** — never auto-undone into
+redeploying the bad revision. The API's approval endpoint is atomic —
 per-incident locks plus fencing tokens make double-execution of a
 remediation impossible (proven by a concurrent-approval test). Incidents
 can run asynchronously (`{"async": true}` → 202 + poll).

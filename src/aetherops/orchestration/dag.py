@@ -48,9 +48,9 @@ class Node:
     compensate: Optional[Callable] = None   # fn(ctx, node_output) -> None
     gate: Optional[GateSpec] = None
     # Per-attempt wall-clock budget (docs/11 §2). None = unbounded. A timed-
-    # out attempt is a TransientError (retried, then failed) — the worker
-    # thread is abandoned, the accepted in-process trade-off vs. Temporal's
-    # real cancellation; the audit trail records node.timeout either way.
+    # out attempt ESCALATES (PermanentError), never retries: the worker thread
+    # cannot be cancelled in-process, so retrying would race a second attempt
+    # against shared state (audit H1). The audit trail records node.timeout.
     timeout_s: Optional[float] = None
 
 
@@ -171,8 +171,14 @@ class DagExecutor:
             pool.shutdown(wait=False, cancel_futures=True)
             self._log("node.timeout", node.name,
                       {"timeout_s": node.timeout_s})
-            raise TransientError(
-                f"attempt exceeded {node.timeout_s}s budget") from None
+            # Escalate, do NOT retry (audit H1): the worker thread cannot be
+            # cancelled in-process, so retrying would run a second attempt
+            # concurrently against the same shared context — racing an
+            # unreviewed result into execution. A stuck node is a human's job.
+            raise PermanentError(
+                f"attempt exceeded {node.timeout_s}s budget — escalate "
+                "(worker cannot be cancelled in-process; a retry would race)"
+            ) from None
         pool.shutdown(wait=False)
         return output
 

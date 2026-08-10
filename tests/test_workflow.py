@@ -47,12 +47,15 @@ class TestIncidentRemediation(unittest.TestCase):
             kinds, {"alert", "metrics", "deploy", "commit", "k8s-event",
                     "episode", "runbook"})
 
-        # Execution was dry-run and produced undo descriptors (saga contract)
+        # Saga contract with SAFE semantics (audit C2): a reversible step
+        # carries an undo, but a rollback to a known-good revision does NOT —
+        # auto-undoing it would redeploy the bad revision.
         executed = run.checkpoint["execute"]["executed"]
         self.assertEqual([record["action"] for record in executed],
                          ["rollback_deployment", "create_revert_pr"])
-        for record in executed:
-            self.assertIn("undo", record["result"])
+        by_action = {r["action"]: r["result"] for r in executed}
+        self.assertIn("undo", by_action["create_revert_pr"])
+        self.assertNotIn("undo", by_action["rollback_deployment"])
 
         # Verified, then learned: memory grew from 1 preloaded to 2 episodes
         self.assertTrue(run.checkpoint["verify"]["output"]["recovered"])
