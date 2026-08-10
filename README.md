@@ -125,16 +125,18 @@ interface. A container that publishes a port must therefore be given a real
 token: `docker run --rm -p 8080:8080 -e AETHEROPS_API_TOKEN=choose-a-token
 aetherops:latest`.
 
-Open `http://localhost:8080/` and you get a real **operator console** (one
-self-contained HTML file served by the API — no build step, no npm, no
-external assets): trigger the SEV2 incident, watch the agent pipeline and
-cited evidence render, **approve the rollback at the policy gate**, and read
-the generated postmortem — all driving the live endpoints. The same page
-also scores changes, searches runbooks, and runs the evaluation. The
+Open `http://localhost:8080/` and you get a real **operator console** — a
+**React 19 + TypeScript** app (`web/`, built with Vite into one
+self-contained, CSP-safe file the stdlib API serves; `make web` rebuilds it):
+trigger the SEV2 incident, watch the agent pipeline and cited evidence
+render, **approve the rollback at the policy gate**, and read the generated
+postmortem — all driving the live endpoints. The same app also scores
+changes, searches runbooks, and runs the evaluation. The
 [public demo]( https://divya1s.github.io/Aether-Ops/) is that exact console
 in **recorded mode** (a real transcript captured from the API), so it's
 clickable at $0 where no backend runs; served locally it flips to **live
-mode** automatically.
+mode** automatically. (The *backend* stays zero-dependency stdlib; only the
+frontend has a build.)
 
 `POST /v1/incidents` starts an incident and runs it to the approval gate;
 `POST /v1/incidents/{id}/approvals {"decision":"approve"}` replays the exact
