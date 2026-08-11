@@ -2,7 +2,7 @@
 
 PY := PYTHONPATH=src python3
 
-.PHONY: demo demo-pause demo-deny demo-change demo-live serve docker test eval eval-live judge-live web help
+.PHONY: demo demo-pause demo-deny demo-change demo-live live-demo serve docker test eval eval-live judge-live web help
 
 help:
 	@echo "make demo         run the SEV2 vertical slice with auto-approval"
@@ -10,6 +10,7 @@ help:
 	@echo "make demo-deny    run, then deny at the approval gate"
 	@echo "make demo-change  run the change-intelligence demo (risky vs benign)"
 	@echo "make demo-live    run the SEV2 demo on a local Ollama model (free)"
+	@echo "make live-demo    end-to-end LIVE run: live GitHub + Prometheus + local model"
 	@echo "make test         run the full unittest suite"
 	@echo "make web          build the React + TypeScript operator console (web/)"
 	@echo "make eval         run the golden-scenario evaluation (release gate)"
@@ -30,6 +31,12 @@ demo-change:
 
 demo-live:
 	$(PY) -m aetherops --approve --live
+
+# Fully live: real GitHub commit + real Prometheus metrics + a real local model.
+# Needs network + a running Ollama; override the model with AETHEROPS_OLLAMA_MODEL.
+AETHEROPS_OLLAMA_MODEL ?= llama3.2:3b
+live-demo:
+	AETHEROPS_OLLAMA_MODEL=$(AETHEROPS_OLLAMA_MODEL) $(PY) -m aetherops.live_demo
 
 web:                            # build the React + TypeScript console (web/)
 	cd web && [ -d node_modules ] || npm install
