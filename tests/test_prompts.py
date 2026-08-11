@@ -9,7 +9,8 @@ from aetherops.prompts.registry import (REGISTRY, current_locks, get_prompt,
 from aetherops.workflows.incident_remediation import run_incident_remediation
 
 EXPECTED_PROMPTS = {"triage", "investigate", "root_cause", "plan",
-                    "review", "verify", "judge", "change_risk", "postmortem"}
+                    "review", "verify", "judge", "change_risk", "postmortem",
+                    "change_review"}
 
 
 class TestRegistry(unittest.TestCase):

@@ -95,6 +95,18 @@ _TEMPLATES = [
         "postmortem", "1.0.0",
         "[postmortem] service={service} failure_class={failure_class} "
         "suspect={suspect} steps={steps} recovered_p99={p99}"),
+    PromptTemplate(
+        "change_review", "1.0.0",
+        "[change_review] You are a release-safety reviewer. Assess the "
+        "DEPLOYMENT RISK of the change below. Focus on whether it raises a "
+        "resource limit (connection pool, memory, replicas, timeouts) that "
+        "could cause an incident such as memory exhaustion/OOM or connection "
+        "saturation. Ground every claim in a specific changed line. Reply with "
+        "exactly three lines and nothing else:\n"
+        "Risk band: <LOW|MEDIUM|HIGH>\n"
+        "Failure mode: <one sentence>\n"
+        "Guardrail: <one recommended mitigation>\n"
+        "Change: {title} ({repo})\nDiff:\n{diff}"),
 ]
 
 REGISTRY: dict[str, PromptTemplate] = {t.id: t for t in _TEMPLATES}
