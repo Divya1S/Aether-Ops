@@ -1,7 +1,7 @@
 # AetherOps
 
 [![CI](https://github.com/Divya1S/Aether-Ops/actions/workflows/ci.yml/badge.svg)](https://github.com/Divya1S/Aether-Ops/actions/workflows/ci.yml)
-**[Live demo →](https://divya1s.github.io/Aether-Ops/)**
+**[Live demo →](https://divya1s.github.io/Aether-Ops/)**  ·  **[Proof it works (captured end-to-end run) →](DEMONSTRATION.md)**
 
 **Autonomous incident remediation & change-intelligence platform** — an
 enterprise AI system that closes the loop humans currently close at 3 a.m.:
