@@ -41,7 +41,10 @@ class TriageAgent(Agent):
             id=new_id("ev"), kind="alert",
             summary=f"PagerDuty {alert.data['id']}: {alert.data['title']} "
                     f"(urgency={alert.data['urgency']})",
-            citation=alert.citation))
+            citation=alert.citation,
+            data={"title": alert.data["title"],
+                  "triggered_at": alert.data.get("triggered_at"),
+                  "urgency": alert.data["urgency"]}))
 
         severity = _SEVERITY_RULES.get(
             (alert.data["urgency"], bool(alert.data.get("customer_impact"))),

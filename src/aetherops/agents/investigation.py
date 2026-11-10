@@ -37,10 +37,12 @@ class ToolOutcome:
     commits: list = field(default_factory=list)   # newly discovered SHAs
 
 
-def _add(ctx, kind, summary, citation, classification="INTERNAL"):
+def _add(ctx, kind, summary, citation, classification="INTERNAL",
+         data: dict | None = None):
     ctx.add_evidence(Evidence(id=new_id("ev"), kind=kind, summary=summary,
                               citation=citation,
-                              classification=classification))
+                              classification=classification,
+                              data=data or {}))
 
 
 def _query_metrics(ctx, service, args):
@@ -49,7 +51,7 @@ def _query_metrics(ctx, service, args):
         {"query": f"p99{{service:{service}}}", "window": "incident"},
         principal="knowledge")
     _add(ctx, "metrics", f"p99 series {result.data['series']}",
-         result.citation)
+         result.citation, data={"series": result.data["series"]})
     return ToolOutcome(f"metrics recorded: {result.citation.excerpt[:120]}")
 
 
@@ -59,7 +61,7 @@ def _list_recent_deploys(ctx, service, args):
     deploys = result.data["deploys"]
     summary = (f"deploys: {deploys}" if deploys
                else "no deployments for this service in the lookback window")
-    _add(ctx, "deploy", summary, result.citation)
+    _add(ctx, "deploy", summary, result.citation, data={"deploys": deploys})
     commits = deploys[0]["commits"] if deploys else []
     return ToolOutcome(f"deploy history recorded; commits to inspect: "
                        f"{commits or 'none'}", commits=commits)
@@ -73,7 +75,9 @@ def _get_commit_diff(ctx, service, args):
     result = ctx.connectors.call("github", "get_commit_diff", {"sha": sha},
                                  principal="knowledge")
     _add(ctx, "commit", f"{result.data['sha']}: {result.data['title']}",
-         result.citation)
+         result.citation,
+         data={"sha": result.data["sha"], "title": result.data["title"],
+               "diff": result.data.get("diff", "")})
     return ToolOutcome(f"commit {sha} recorded: {result.data['title']}")
 
 
@@ -83,7 +87,9 @@ def _get_events(ctx, service, args):
     events = result.data["events"]
     summary = (f"events: {events[:2]}..." if events
                else "no abnormal pod events in window")
-    _add(ctx, "k8s-event", summary, result.citation)
+    _add(ctx, "k8s-event", summary, result.citation,
+         data={"events": events,
+               "count": result.data.get("oomkilled_count", len(events))})
     return ToolOutcome(f"k8s events recorded: {result.citation.excerpt[:120]}")
 
 

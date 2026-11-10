@@ -52,6 +52,24 @@ class EpisodicMemory:
                                    t[2]), reverse=True)
         return [episode for _, episode, _ in scored[:k]]
 
+    def update(self, episode_id: str, fields: dict) -> bool:
+        """Amend a stored episode in place — how human feedback reaches
+        memory. Recall and change-risk scoring only treat VERIFIED episodes
+        as precedent, so flipping `verified` here is what stops a diagnosis
+        an operator rejected from confirming itself into the next incident.
+        Returns False when the episode is unknown (e.g. already evicted)."""
+        for episode in self._episodes:
+            if episode.get("id") == episode_id:
+                episode.update(fields)
+                return True
+        return False
+
+    def get(self, episode_id: str) -> dict | None:
+        for episode in self._episodes:
+            if episode.get("id") == episode_id:
+                return dict(episode)
+        return None
+
     def __len__(self) -> int:
         return len(self._episodes)
 

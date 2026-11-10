@@ -107,6 +107,52 @@ conflicts with the LangGraph extra — so LangSmith serves the eval/observabilit
 slot, and RAGAS-style faithfulness is already native (the LLM-judge + citation
 anchor). Choosing not to ship a broken dependency is itself the decision.
 
+### 9. The hypothesis tree explains; it never decides
+**Decision.** Every investigation carries a differential diagnosis — competing
+causes, each validated, ruled out or left inconclusive by falsifiable criteria
+that cite evidence — built as a *read-only projection* of the workflow's record.
+It shares the Reviewer's predicates (`reasoning/signals.py`) and reports whether
+it agrees with the pipeline, but nothing branches on it.
+**Why.** "Insufficient evidence — escalate" is correct and useless to the person
+paged; the operator needs to see *what* was ruled out and *what would settle it*.
+Making the tree a second decision-maker would create two sources of truth for
+what may execute. **Tradeoff.** Temporal precedence is evaluated twice (bundle
+facts for the tree, independent re-reads for the Reviewer); the shared predicate
+keeps them from drifting. **Verified.** On all seven golden scenarios the tree
+validates exactly the adjudicated class and nothing on the must-escalate ones;
+removing either grounding check fails the suite ([docs/20 §2](20-operator-console.md)).
+
+### 10. Alert correlation is rules over declared topology, not a model
+**Decision.** Alerts deduplicate by an identity fingerprint and correlate when
+they fall in a time window *and* on the causal path through a group's origin in
+the service graph. Each alert records the one-sentence reason it joined.
+**Why.** Grouping is the step an on-call engineer trusts least; it has to be
+explainable and reproducible. A service the graph does not know correlates only
+with itself — the platform claims no topology it was not given.
+**Tradeoff.** Misses relationships nobody declared, where an embedding-based
+correlator might guess them. **Verified.** `tests/test_alerts.py`: origin is
+independent of arrival order; an unrelated service opens its own group; the
+bundled 16-event storm yields 3 groups.
+
+### 11. The route table is the API's single source of truth
+**Decision.** Each endpoint is one row — method, path, required grant, summary.
+Dispatch, access control, rate limiting, per-route body limits and the OpenAPI
+document are all derived from it.
+**Why.** An endpoint that forgets its auth check is the classic way an internal
+tool leaks. Here a route cannot exist without declaring who may call it.
+**Tradeoff.** Handlers are plain functions rather than framework-decorated
+methods. **Verified.** A test walks every row anonymously and expects 401; the
+spec is asserted row-for-row against the table.
+
+### 12. The public demo replays a recording of the real API
+**Decision.** With no backend (GitHub Pages) the console replays a transcript
+that `tools/record_demo.py` captures by driving the real server. The deny branch
+is a second genuine run, with its own incident id.
+**Why.** A hand-written demo fixture drifts into fiction. A recording can only
+show what the system actually returned. **Tradeoff.** ~440 KB of JSON in the
+bundle. **Verified.** A test fails when the recording's shape no longer matches
+the API, and another when the API-served console and the Pages build differ.
+
 ## Honest scope & limitations
 
 - **It is a reference implementation, not a fleet in production.** Connectors are

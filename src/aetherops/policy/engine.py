@@ -77,6 +77,13 @@ class PolicyEngine:
         "read": {"viewer", "operator", "approver", "admin"},
         "create": {"operator", "admin"},
         "approve": {"approver", "admin"},
+        # Alert intake is its own grant so a webhook credential can be
+        # least-privilege: the `ingest` role may post alerts and nothing
+        # else — it cannot read an incident, start one, or decide a gate.
+        "ingest": {"ingest", "operator", "admin"},
+        # Marking a diagnosis right or wrong feeds organizational memory,
+        # so it is a write — viewers cannot do it.
+        "feedback": {"operator", "approver", "admin"},
     }
 
     @classmethod

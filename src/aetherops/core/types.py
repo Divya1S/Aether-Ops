@@ -60,6 +60,12 @@ class Evidence:
     summary: str
     citation: Citation
     classification: str = "INTERNAL"   # PUBLIC | INTERNAL | CONFIDENTIAL | RESTRICTED
+    # Structured facts behind the summary (metric series, deploy records,
+    # commit diff, pod events) — already redacted at the connector gateway.
+    # Deterministic consumers (the hypothesis tree, the console's signal
+    # chart) read these instead of re-parsing prose; model prompts never see
+    # this field (the digest is built from summary + excerpt only).
+    data: dict = field(default_factory=dict, compare=False, hash=False)
 
 
 @dataclass

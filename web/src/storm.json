@@ -1,0 +1,20 @@
+{
+  "alerts": [
+    {"source": "prometheus", "name": "HighP99Latency", "service": "checkout-service", "severity": "critical", "summary": "p99 latency above 2000 ms for 5m"},
+    {"source": "pagerduty", "name": "checkout-service p99 latency > 2000ms", "service": "checkout-service", "severity": "critical", "summary": "P-8842 triggered, customer impact reported"},
+    {"source": "prometheus", "name": "HighP99Latency", "service": "checkout-service", "severity": "critical", "summary": "p99 latency above 2000 ms for 5m"},
+    {"source": "prometheus", "name": "PodOOMKilled", "service": "checkout-service", "severity": "high", "summary": "container killed: OOMKilled (checkout-7f9c-1)"},
+    {"source": "prometheus", "name": "PodOOMKilled", "service": "checkout-service", "severity": "high", "summary": "container killed: OOMKilled (checkout-7f9c-4)"},
+    {"source": "prometheus", "name": "PodCrashLooping", "service": "checkout-service", "severity": "high", "summary": "pod restarting repeatedly (CrashLoopBackOff)"},
+    {"source": "datadog", "name": "High5xxRate", "service": "storefront-web", "severity": "high", "summary": "5xx rate above 4% on /checkout"},
+    {"source": "prometheus", "name": "HighP99Latency", "service": "checkout-service", "severity": "critical", "summary": "p99 latency above 2000 ms for 5m"},
+    {"source": "datadog", "name": "High5xxRate", "service": "storefront-web", "severity": "high", "summary": "5xx rate above 4% on /checkout"},
+    {"source": "datadog", "name": "CheckoutConversionDrop", "service": "storefront-web", "severity": "warning", "summary": "conversion down 31% vs. last week"},
+    {"source": "prometheus", "name": "PodOOMKilled", "service": "checkout-service", "severity": "high", "summary": "container killed: OOMKilled (checkout-7f9c-1)"},
+    {"source": "prometheus", "name": "TLSHandshakeErrors", "service": "payments-gateway", "severity": "critical", "summary": "TLS handshake failures spiking"},
+    {"source": "pagerduty", "name": "payments-gateway TLS handshake failures spiking", "service": "payments-gateway", "severity": "critical", "summary": "P-9433 triggered"},
+    {"source": "prometheus", "name": "TLSHandshakeErrors", "service": "payments-gateway", "severity": "critical", "summary": "TLS handshake failures spiking"},
+    {"source": "prometheus", "name": "HighP99Latency", "service": "checkout-service", "severity": "critical", "summary": "p99 latency above 2000 ms for 5m"},
+    {"source": "prometheus", "name": "QueueBacklog", "service": "orders-service", "severity": "warning", "summary": "order-events consumer lag above 5k"}
+  ]
+}

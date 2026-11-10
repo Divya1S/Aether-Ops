@@ -38,6 +38,47 @@ class ServiceGraph:
     def blast_radius(self, service: str) -> int:
         return len(self.dependents(service))
 
+    def dependencies(self, service: str) -> set[str]:
+        """Transitive forward dependencies: everything `service` calls,
+        directly or through another service."""
+        found: set[str] = set()
+        frontier = [service]
+        while frontier:
+            current = frontier.pop()
+            for target in self._dependencies.get(current, ()):
+                if target not in found:
+                    found.add(target)
+                    frontier.append(target)
+        return found
+
+    def services(self) -> list[str]:
+        return sorted(self._dependencies)
+
+    def edges(self) -> list[tuple[str, str]]:
+        """Direct (service, depends_on) pairs, sorted for stable output."""
+        return sorted((src, target)
+                      for src, targets in self._dependencies.items()
+                      for target in targets)
+
+    def knows(self, service: str) -> bool:
+        return service in self._dependencies
+
+    def depth(self, service: str) -> int:
+        """Longest dependency chain below `service` (0 = leaf). Drives the
+        layered layout: callers sit above what they call."""
+        memo: dict[str, int] = {}
+
+        def walk(name: str, seen: frozenset) -> int:
+            if name in memo:
+                return memo[name]
+            below = [walk(t, seen | {name})
+                     for t in self._dependencies.get(name, ())
+                     if t not in seen]
+            memo[name] = 1 + max(below) if below else 0
+            return memo[name]
+
+        return walk(service, frozenset())
+
 
 def default_graph() -> ServiceGraph:
     """Demo topology for the golden scenarios."""

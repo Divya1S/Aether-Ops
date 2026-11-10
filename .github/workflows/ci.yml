@@ -20,3 +20,19 @@ jobs:
         run: make test
       - name: Evaluation release gate (fails below Phase 1 precision)
         run: make eval
+
+  console:
+    # The operator console (web/): typecheck, unit tests, and a production
+    # build. The backend stays zero-dependency; only this job needs Node.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Typecheck + unit tests
+        run: make web-test
+      - name: Production build (single self-contained file)
+        run: cd web && npm run build

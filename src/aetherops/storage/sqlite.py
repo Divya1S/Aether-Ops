@@ -54,6 +54,70 @@ class SqliteEpisodicMemory(EpisodicMemory):
             self._conn.commit()
             return episode_id
 
+    def update(self, episode_id: str, fields: dict) -> bool:
+        with self._db_lock:
+            if not super().update(episode_id, fields):
+                return False
+            body = next(e for e in self._episodes
+                        if e.get("id") == episode_id)
+            self._conn.execute(
+                "UPDATE episodes SET body = ? WHERE id = ?",
+                (json.dumps(body, default=str), episode_id))
+            self._conn.commit()
+            return True
+
+    def close(self) -> None:
+        with self._db_lock:
+            self._conn.close()
+
+
+class SqliteIncidentArchive:
+    """Durable incident history (docs/12 §5.1 `incidents`, reduced to one
+    JSON snapshot per incident). The API writes an incident's rendered view
+    here on every state change, so the list and each detail page survive a
+    restart alongside organizational memory and the audit chains.
+
+    What is archived is the *record*, not the live workflow: a run paused at
+    its approval gate holds in-process state that does not survive the
+    process, so an archived PAUSED incident is readable but not resumable
+    (production resumes from Temporal history — docs/03 §7)."""
+
+    def __init__(self, db_path: str):
+        self._db_lock = threading.Lock()
+        self._conn = _connect(db_path)
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS incidents ("
+            "id TEXT PRIMARY KEY, created_at REAL NOT NULL, "
+            "body TEXT NOT NULL)")
+        self._conn.commit()
+
+    def save(self, incident_id: str, created_at: float, view: dict) -> None:
+        with self._db_lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO incidents (id, created_at, body) "
+                "VALUES (?, ?, ?)",
+                (incident_id, created_at, json.dumps(view, default=str)))
+            self._conn.commit()
+
+    def get(self, incident_id: str) -> dict | None:
+        with self._db_lock:
+            row = self._conn.execute(
+                "SELECT body FROM incidents WHERE id = ?",
+                (incident_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def all(self, limit: int = 200) -> list[dict]:
+        with self._db_lock:
+            rows = self._conn.execute(
+                "SELECT body FROM incidents ORDER BY created_at DESC "
+                "LIMIT ?", (limit,)).fetchall()
+        return [json.loads(body) for (body,) in rows]
+
+    def __len__(self) -> int:
+        with self._db_lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM incidents").fetchone()[0]
+
     def close(self) -> None:
         with self._db_lock:
             self._conn.close()

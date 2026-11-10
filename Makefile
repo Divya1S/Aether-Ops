@@ -2,7 +2,7 @@
 
 PY := PYTHONPATH=src python3
 
-.PHONY: demo demo-pause demo-deny demo-change demo-live live-demo serve docker test eval eval-live judge-live web help
+.PHONY: demo demo-pause demo-deny demo-change demo-live live-demo serve docker test eval eval-live judge-live web web-test record-demo check help
 
 help:
 	@echo "make demo         run the SEV2 vertical slice with auto-approval"
@@ -12,7 +12,11 @@ help:
 	@echo "make demo-live    run the SEV2 demo on a local Ollama model (free)"
 	@echo "make live-demo    LIVE change-risk review of a real GitHub commit (local model)"
 	@echo "make test         run the full unittest suite"
+	@echo "make serve        run the API + operator console on http://127.0.0.1:8080"
 	@echo "make web          build the React + TypeScript operator console (web/)"
+	@echo "make web-test     typecheck + unit-test the console"
+	@echo "make record-demo  re-record the console's DEMO transcript from the real API"
+	@echo "make check        everything CI runs: test, eval, web-test"
 	@echo "make eval         run the golden-scenario evaluation (release gate)"
 	@echo "make eval-live    + live-model and semantic-retrieval tracks (free, local Ollama)"
 	@echo "make judge-live   LLM-as-judge on a real local model + the deterministic anchor"
@@ -39,12 +43,26 @@ AETHEROPS_OLLAMA_MODEL ?= llama3.2:3b
 live-demo:
 	AETHEROPS_OLLAMA_MODEL=$(AETHEROPS_OLLAMA_MODEL) $(PY) -m aetherops.live_demo
 
-web:                            # build the React + TypeScript console (web/)
-	cd web && [ -d node_modules ] || npm install
+web/node_modules: web/package-lock.json
+	cd web && npm ci
+	@touch web/node_modules
+
+web-test: web/node_modules      # typecheck + unit tests (vitest)
+	cd web && npm run typecheck
+	cd web && npm test
+
+# The public demo has no backend: the console replays a transcript captured
+# from the real API. Re-record it whenever the API's response shapes change.
+record-demo:
+	python3 tools/record_demo.py
+
+web: web/node_modules           # build the React + TypeScript console (web/)
 	cd web && npm run build
 	cp web/dist/index.html src/aetherops/api/static/index.html
 	cp web/dist/index.html site/index.html
 	@echo "built web/ (React 19 + TS, Vite) -> API-served console + gh-pages"
+
+check: test eval web-test       # everything CI runs
 
 serve:
 	AETHEROPS_ALLOW_DEV_TOKEN=1 AETHEROPS_API_LOG=1 $(PY) -m aetherops.api

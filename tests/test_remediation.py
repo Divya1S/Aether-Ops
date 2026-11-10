@@ -101,7 +101,12 @@ class TestApprovalAtomicity(unittest.TestCase):
             _request(self.port,
                      f"/v1/incidents/{created['incident_id']}/approvals",
                      method="POST", body=big)
-        self.assertEqual(caught.exception.code, 400)   # body dropped ⇒ no decision
+        # Refused outright (413) rather than read as an empty request: either
+        # way no decision is recorded and nothing executes.
+        self.assertEqual(caught.exception.code, 413)
+        _, after = _request(self.port,
+                            f"/v1/incidents/{created['incident_id']}")
+        self.assertEqual(after["status"], "PAUSED")
 
 
 class TestTimeouts(unittest.TestCase):
