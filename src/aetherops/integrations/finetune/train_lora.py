@@ -10,7 +10,7 @@ weights, train low-rank adapters, save a few-MB adapter.
     python -m aetherops.integrations.finetune.train_lora plan_sft.jsonl \
         --base HuggingFaceTB/SmolLM2-135M-Instruct --out lora-plan-adapter
 
-A real run wants a GPU (docs/18 has a Colab T4 recipe); the CPU smoke path in
+A real run wants a GPU (docs/15 has a Colab T4 recipe); the CPU smoke path in
 the tests proves the pipeline emits an adapter. Needs the `finetune` extra;
 the core never imports it.
 """

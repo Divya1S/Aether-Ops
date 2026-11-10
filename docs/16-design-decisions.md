@@ -1,7 +1,7 @@
-# 19 — Design decisions & rationale
+# 16 — Design decisions & rationale
 
 Why the system is built the way it is — the load-bearing choices, what each one
-trades away, and how it is verified. Reads as an index into docs/00–18.
+trades away, and how it is verified. Reads as an index into docs/00–15.
 
 ## Thesis
 
@@ -162,7 +162,7 @@ the API, and another when the API-served console and the Pages build differ.
   not live traffic.** They are stated with their sample size and CIs, not inflated.
 - **No GPU here:** the fine-tuning pipeline's dataset + contract are CI-verified
   and a CPU smoke-train emits a real adapter; a *quality* adapter needs a GPU run
-  (docs/18 has the recipe).
+  (docs/15 has the recipe).
 
 ## If I productionized it next
 

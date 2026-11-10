@@ -161,6 +161,9 @@ has exactly one of the three.
 | [12-apis-and-storage.md](12-apis-and-storage.md) | Public API surface, event topics, storage schemas, retention |
 | [13-cost-model.md](13-cost-model.md) | Unit economics, token budgets, infra cost, ROI |
 | [14-risks-and-roadmap.md](14-risks-and-roadmap.md) | Top risks with mitigations; phased roadmap with exit criteria |
-| [15-portfolio.md](15-portfolio.md) | Portfolio justification, resume bullets, interview prep, tradeoffs |
+| [15-fine-tuning.md](15-fine-tuning.md) | Fine-tuning a small model on the planner's structured-output task (LoRA/PEFT) |
+| [16-design-decisions.md](16-design-decisions.md) | The load-bearing design choices, what each trades away, how it is verified |
+| [20-operator-console.md](20-operator-console.md) | Operator console, alert intake, the hypothesis tree, and the API behind them |
+| [21-technical-overview.md](21-technical-overview.md) | The detailed tour: every mechanism, how it is measured, which test proves it |
 
 Reference implementation (vertical slice, pure Python stdlib): `src/aetherops/` — see the repository [README.md](../README.md).

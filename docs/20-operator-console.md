@@ -35,7 +35,7 @@ Deliberately **not** adopted:
   explainable (every alert records *why* it joined); a model's clustering is not.
 - **Autonomous remediation / auto-opened fix PRs.** Several tools ship these. The
   platform's position is unchanged: autonomy of investigation and proposal, never
-  of execution ([19 §1](19-design-decisions.md)).
+  of execution ([16 §1](16-design-decisions.md)).
 - **A long integration list.** Sixty connectors is a product milestone, not an
   architectural one. The two real adapters (GitHub, Prometheus) prove the seam.
 - **A confidence percentage on each hypothesis.** The platform has one calibrated

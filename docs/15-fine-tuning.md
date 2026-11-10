@@ -1,4 +1,4 @@
-# 18 — Fine-tuning the structured-output task (LoRA/PEFT)
+# 15 — Fine-tuning the structured-output task (LoRA/PEFT)
 
 The planner is a **deterministic policy**: given a diagnosis it emits a
 schema-valid JSON remediation plan drawn only from the vetted action catalog
